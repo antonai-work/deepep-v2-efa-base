@@ -27,11 +27,20 @@ jobs:
         with:
           root-reserve-mb: 4096
           swap-size-mb: 1024
+          build-mount-path: /runner-build-space
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
           remove-docker-images: 'true'
+
+      - name: Point Docker data-root at the maximized mount
+        run: |
+          sudo mkdir -p /runner-build-space/docker
+          echo '{"data-root":"/runner-build-space/docker"}' \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info | grep -i 'Docker Root Dir'
 
       - name: Re-checkout after maximize-build-space
         uses: actions/checkout@v4
