@@ -181,20 +181,27 @@ human-readable pin, but it is still a **release-name tag**: if a future
 patch release (`v0.1.1-sm90a`, etc.) is ever retagged to the same name
 by accident, the name would move. The GHA workflow at
 `.github/workflows/build-and-push.yml` deliberately publishes only two
-tags per release -- the release name itself and the immutable
-`:sha-<short-git-sha>` tag -- so consumers who require true immutability
-should pin one of:
+tags per release -- the release name itself and the `:sha-<short-git-sha>`
+tag -- so consumers who require true immutability should prefer pinning
+the **image digest**. The sha-tag is strictly better than the release-
+name tag (a different short SHA maps to a different commit by
+construction), but only a `@sha256:...` digest is cryptographically
+guaranteed to be the exact bytes you pulled:
 
-1. **Image digest** (strongest): captured at `docker pull` time from
+1. **Image digest** (strongest and recommended for true immutability):
+   captured at `docker pull` time from
    `docker inspect --format='{{index .RepoDigests 0}}'` and referenced
    as `ghcr.io/antonai-work/deepep-v2-efa-base@sha256:<digest>`.
-2. **`:sha-<short-git-sha>` tag** (equivalent for this workflow): the
-   short SHA is content-addressable to a single commit on `main`, and
-   the workflow never republishes the same sha-tag to a different
-   build.
+   Immune to any tag re-push and to short-SHA collisions.
+2. **`:sha-<short-git-sha>` tag** (pragmatic second choice): the short
+   SHA identifies a single commit on `main`, and this workflow does
+   not re-push the same sha-tag from a later build. It is not
+   cryptographically immutable the way a digest is (a registry admin
+   could in principle retag), but in practice is sufficient for CI
+   base-image pins that already trust the registry's ACLs.
 
 Use the release-name tag for human-readable pod specs and
-documentation; use the digest or sha-tag for anything that must be
-byte-reproducible over time (CI base-image pins, SBOMs, compliance
-records). This mirrors the god-mode F3 review recommendation from
+documentation; use the **digest** for SBOMs, compliance records, and
+anything that must be byte-reproducible under a zero-trust registry
+assumption. This mirrors the god-mode F3 review recommendation from
 2026-05-05.
