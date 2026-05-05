@@ -1,0 +1,46 @@
+version: 0.2
+
+# AWS CodeBuild spec for deepep-v2-efa-base
+# Builds the base image, runs preflight, pushes to ECR.
+# Environment variables required:
+#   AWS_ACCOUNT_ID, AWS_REGION, ECR_REPO (default: deepep-v2-efa-base)
+#   BASE_VERSION_TAG (default: v0.1.0-sm90a)
+
+env:
+  variables:
+    ECR_REPO: "deepep-v2-efa-base"
+    BASE_VERSION_TAG: "v0.1.0-sm90a"
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+      - export ECR_REPO_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
+      - export IMAGE_TAG="${BASE_VERSION_TAG}-amd64"
+      - export COMMIT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - echo "Building ${ECR_REPO_URI}:${IMAGE_TAG}"
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+      - docker build -t ${ECR_REPO_URI}:${IMAGE_TAG} .
+      - docker tag ${ECR_REPO_URI}:${IMAGE_TAG} ${ECR_REPO_URI}:${COMMIT_SHA}
+
+  post_build:
+    commands:
+      - echo "Running preflight checks..."
+      - docker run --rm ${ECR_REPO_URI}:${IMAGE_TAG} bash /preflight.sh
+      - |
+        if [ $? -ne 0 ]; then
+          echo "Preflight checks failed - image validation error"
+          exit 1
+        fi
+      - echo "Preflight passed - pushing to ECR..."
+      - docker push ${ECR_REPO_URI}:${IMAGE_TAG}
+      - docker push ${ECR_REPO_URI}:${COMMIT_SHA}
+      - echo "Successfully pushed ${ECR_REPO_URI}:${IMAGE_TAG}"
+      - echo "Successfully pushed ${ECR_REPO_URI}:${COMMIT_SHA}"
+
+artifacts:
+  files: []

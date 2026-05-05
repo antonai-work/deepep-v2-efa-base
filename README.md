@@ -96,6 +96,24 @@ The `Dockerfile` does not apply them directly - it clones a pre-patched
 fork branch at a pinned SHA, for the reasons explained in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Continuous Integration
+
+This repository provides two independent build paths:
+
+### GitHub Actions → GHCR (default)
+- Publishes to `ghcr.io/antonai-work/deepep-v2-efa-base`
+- Public, free, zero configuration
+- Triggered automatically on tag push
+- Workflow: `.github/workflows/build-and-push.yml`
+
+### AWS CodeBuild → ECR (opt-in)
+- Publishes to your private ECR repository
+- For AWS-native deployments requiring private caching
+- Manual setup required (IAM role, ECR repo, CodeBuild project)
+- Setup guide: [`ci/CODEBUILD-SETUP.md`](ci/CODEBUILD-SETUP.md)
+
+Use GitHub Actions unless you need private ECR hosting.
+
 ## Preflight
 
 `preflight.sh` ships inside the image at `/preflight.sh`. The GitHub
@@ -132,6 +150,10 @@ build glue (`Dockerfile`, `preflight.sh`, CI, patch extracts).
 |-- .github/workflows/
 |   |-- build-and-push.yml         # Tag push -> build + push to GHCR
 |   `-- test-build.yml             # PR / main push -> build-only + preflight
+|-- ci/
+|   |-- buildspec.yml              # AWS CodeBuild specification
+|   |-- CODEBUILD-SETUP.md         # CodeBuild setup instructions
+|   `-- README.md                  # GHCR vs ECR comparison
 |-- patches/
 |   |-- 0001-*.patch               # auto-QP cap at 2 on EFA
 |   |-- 0002-*.patch               # get_rdma_gbs EFA fast path
