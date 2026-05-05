@@ -1,0 +1,49 @@
+From 0b78333a7ad7c8b6e4a0f6b47a5c2e1c9f2b1a8d Mon Sep 17 00:00:00 2001
+From: Anton Alexander <antonai@users.noreply.github.com>
+Date: Fri, 24 Apr 2026 15:12:57 +0000
+Subject: [PATCH 2/3] aws-efa: add EFA fast path in get_rdma_gbs to fix SM
+ auto-sizing
+
+On p5en.48xlarge, sysfs reports 16 rails x 200 Gb/s = 400 GB/s line
+rate, but aws-ofi-nccl Gin proxy + libfabric SRD delivers ~25 GB/s
+effective aggregate per node. Plugging 400 into
+ElasticBuffer.get_theoretical_num_sms() makes the formula pick
+num_sms >= 64 (H200 SM cap) for any realistic workload, which is
+severely over-provisioned on EFA and causes inter-SM notify/forward
+synchronization to dominate (24 SMs observed 2x slower than 4 SMs
+in D22 QP sweep).
+
+EP_EFA_RDMA_GBS overrides the 25 GB/s default. On the D22 workload
+(128 tokens, 256 experts, topk=8, 2 nodes x 8 ranks), 25 -> 6 SMs,
+15 -> 4 SMs. Empirically-best manual config is num_sms=4 num_qps=6
+yielding cached D + combine p50 = 740us vs V1 Gin's 1551us.
+
+See d22-v2-perf-sweep.md for full matrix.
+---
+ deep_ep/utils/envs.py | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/deep_ep/utils/envs.py b/deep_ep/utils/envs.py
+index 7f05ae0..91c1fa6 100644
+--- a/deep_ep/utils/envs.py
++++ b/deep_ep/utils/envs.py
+@@ -250,6 +250,17 @@ def get_rdma_gbs(nic_name: str = 'mlx5_0') -> float:
+     Returns:
+         gbs: the RDMA bandwidth in GB/s (0 if detection fails).
+     """
++
++    # AWS EFA fast path: theoretical 16-rail x 200 Gb/s = 400 GB/s, but
++    # aws-ofi-nccl Gin proxy + libfabric SRD delivers ~25 GB/s effective
++    # aggregate per node. Override EP_EFA_RDMA_GBS to adjust.
++    import glob as _glob
++    try:
++        if _glob.glob('/sys/class/infiniband/rdmap*s0'):
++            return float(os.environ.get('EP_EFA_RDMA_GBS', 25.0))
++    except Exception:
++        pass
++
+     # noinspection PyBroadException
+     try:
+         result = subprocess.run(['ibstat'], capture_output=True, text=True, check=True)
+--
+2.43.0

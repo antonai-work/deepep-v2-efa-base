@@ -1,0 +1,21 @@
+# Python build artefacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Docker / build
+.docker/
+*.tar
+*.log
+
+# Local scratch
+scratch/
+tmp/

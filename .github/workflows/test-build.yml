@@ -1,0 +1,60 @@
+name: test-build
+
+# Triggers on any PR and on pushes to main. Builds the image locally on the
+# runner (no push) and runs the 5-check preflight harness inside it.
+#
+# This catches Dockerfile regressions before they hit a tag push, so the
+# release tag flow is always hot.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Re-checkout after maximize-build-space
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: deepep-v2-efa-base:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Run preflight harness inside the image
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/preflight"
+          docker run --rm deepep-v2-efa-base:test bash /preflight.sh \
+            | tee "${RUNNER_TEMP}/preflight/log"
+          tail -n1 "${RUNNER_TEMP}/preflight/log" | grep -E '^5/5 checks PASS$'

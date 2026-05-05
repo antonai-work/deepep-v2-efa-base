@@ -1,0 +1,51 @@
+From c84dcac613c8df743a6487a312bbc966c745c600 Mon Sep 17 00:00:00 2001
+From: Anton Alexander <antonai@users.noreply.github.com>
+Date: Fri, 24 Apr 2026 21:33:18 +0000
+Subject: [PATCH 3/3] aws-efa: raise dispatch kScaleoutUpdateInterval from 3
+ to 16
+
+The hybrid_dispatch_impl scaleout warps issue cross-node RDMA atomics
+to signal the recipient's forward warp that a chunk is ready to
+consume. At the stock default of 3 tokens per update, each channel
+per peer generates a large number of round-trip EFA atomics.
+
+On 2-node H200 EFA with the aws-ofi-nccl GIN proxy + libfabric SRD
+backend, each atomic is far more expensive than an InfiniBand atomic
+(CPU-relayed proxy hop), so the inner atomic rate dominates the
+dispatch kernel. Raising the default to 16 cuts the atomic frequency
+by ~3x. `kNumSlotsPerForwardChunk` tracks `kScaleoutUpdateInterval`
+so the forward-warp consume loop stays aligned with the release
+granularity.
+
+Measured on 2-node H200 EFA (num_tokens=128, 8 ranks/node, ui=16):
+- dispatch kernel mean:  463us -> 279us  (-40%)
+- D+C kernel mean:       785us -> 615us  (-22%)
+- EFA TX per run:        6.13 GB (unchanged)
+
+Combine kernel (kNumScaleupUpdateInterval) was tested at 16 and
+showed a regression (+60us), so the combine-side default is kept at
+3. Only the dispatch-side change is upstreamed here.
+
+All 134 non-hang configs in enumerate_ep_modes() pass unchanged
+on both stock and patched builds; the one pre-existing hang at
+async_with_compute_stream=1+allocate_on_comm_stream=0 is unrelated
+to this change.
+---
+ deep_ep/include/deep_ep/impls/hybrid_dispatch.cuh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/deep_ep/include/deep_ep/impls/hybrid_dispatch.cuh b/deep_ep/include/deep_ep/impls/hybrid_dispatch.cuh
+index 7d75b023..1a069529 100644
+--- a/deep_ep/include/deep_ep/impls/hybrid_dispatch.cuh
++++ b/deep_ep/include/deep_ep/impls/hybrid_dispatch.cuh
+@@ -23,7 +23,7 @@ template <bool kDoCPUSync,
+           int kNumChannelsPerSM = kNumScaleoutWarps,
+           int kNumChannels = kNumScaleoutWarps * kNumSMs,
+           int kNumMaxTokensPerChannel = math::constexpr_ceil_div(kNumMaxTokensPerRank, kNumChannels),
+-          int kScaleoutUpdateInterval = 3,
++          int kScaleoutUpdateInterval = 16,
+           int kNumSlotsPerForwardChunk = kScaleoutUpdateInterval,
+           int kNumRanks = kNumScaleoutRanks * kNumScaleupRanks,
+           int kNumNotifyThreads = kNumNotifyWarps * 32,
+--
+2.43.0

@@ -1,0 +1,144 @@
+# deepep-v2-efa-base
+
+**DeepEP V2 + AWS EFA base container image.** Everything below `/opt/DeepEP`
+in the image is DeepEP V2 (NCCL Gin backend) built against AWS EFA + the
+aws-ofi-nccl GIN plugin, pinned at commits that produce a working 2-node
+dispatch + combine loop on `p5.48xlarge` (H100) and `p5en.48xlarge` (H200).
+
+The image is meant to be consumed by downstream inference and training
+repos via a single `FROM ghcr.io/antonai-work/deepep-v2-efa-base:<tag>`
+directive. Each engine integration (vLLM, SGLang, Megatron-LM, NeMo-RL,
+etc.) adds its own runtime on top without re-solving the CUDA + EFA +
+NCCL + aws-ofi-nccl + DeepEP build problem.
+
+## What's inside
+
+| Layer | Version | Source |
+|---|---|---|
+| Base OS | `ubuntu 24.04 noble` | `nvidia/cuda:12.9.0-devel-ubuntu24.04` |
+| CUDA | `12.9.0` | nvidia/cuda registry |
+| EFA userspace | `1.48.0` | `efa-installer.amazonaws.com/aws-efa-installer-1.48.0.tar.gz`, `--build-ngc` path |
+| libfabric | `libfabric1-aws` (bundled with EFA 1.48.0) | EFA tarball |
+| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu13>=2.30.4` |
+| aws-ofi-nccl | `6e504db3403931cde43a2335adcc73fbc69cccac` (2026-04-24) | `aws/aws-ofi-nccl@6e504db` |
+| GDRCopy | `v2.5.1` | `NVIDIA/gdrcopy@v2.5.1` |
+| NVSHMEM | `>= 3.3.9` | pip `nvidia-nvshmem-cu12>=3.3.9` |
+| PyTorch | cu129 wheel (cu128 fallback) | `download.pytorch.org/whl/cu129` |
+| NumPy | `< 2` | pip |
+| DeepEP V2 | `c84dcac613c8df743a6487a312bbc966c745c600` | `dmvevents/DeepEP-1@aws-efa-auto-qp-cap-v2` |
+
+## Consuming the image
+
+```dockerfile
+FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+
+# Your engine install goes here.
+RUN pip install --no-cache-dir --break-system-packages vllm==<pin>
+```
+
+Runtime env already baked into the image so child images do not need to
+re-export it:
+
+```
+FI_PROVIDER=efa
+FI_EFA_USE_DEVICE_RDMA=1
+FI_EFA_ENABLE_SHM_TRANSFER=0
+FI_EFA_FORK_SAFE=1
+NCCL_NET_PLUGIN=/opt/amazon/ofi-nccl/lib/libnccl-net-ofi.so
+NCCL_GIN_ENABLE=1
+NCCL_GIN_TYPE=2
+NCCL_CUMEM_ENABLE=1
+NCCL_CUMEM_HOST_ENABLE=1
+NCCL_NVLS_ENABLE=0
+NCCL_IGNORE_DISABLED_P2P=1
+OFI_NCCL_PROTOCOL=RDMA
+OFI_NCCL_GIN_MAX_REQUESTS=512
+DEEP_EP_BACKEND=nccl
+EP_EFA_MAX_QPS=2
+EP_EFA_RDMA_GBS=25.0
+```
+
+See [`docs/USAGE.md`](docs/USAGE.md) for multi-node K8s and `torchrun`
+examples.
+
+## Available tags
+
+| Tag | Meaning |
+|---|---|
+| `v0.1.0-sm90a` | First stable release. Targeted SM arch: `9.0a` (H100 + H200). |
+| `v<X.Y.Z>-sm90a` | Every subsequent release bumps SemVer; `sm90a` is kept as the primary arch suffix. |
+| `sha-<short>` | Exact git SHA of the `Dockerfile` + patches that produced the image, for audit / bisect. |
+
+All tags under `ghcr.io/antonai-work/deepep-v2-efa-base`. There is
+intentionally **no `latest` tag** - pin to `v0.1.0-sm90a` (or newer) so
+downstream images rebuild deterministically.
+
+## Why this repo exists
+
+DeepEP V2 landed on `main` upstream on 2026-04-29 (PR #605). AWS EFA
+compatibility for V2 requires three small changes that are still open
+as PR #612 on `deepseek-ai/DeepEP`, plus an upstream aws-ofi-nccl fix
+that landed after the plugin's last tag. Every downstream engine has to
+pin the same combination or fail with `CUDA_ERROR_LAUNCH_FAILED` on the
+first dispatch.
+
+Rather than duplicate that solved-problem layer across every engine
+integration, this image freezes it once, publishes it to GHCR, and
+lets every child repo depend on a single tag.
+
+## What's in `patches/`
+
+Three standalone `git format-patch` files extracted from DeepEP PR #612.
+See [`patches/README.md`](patches/README.md) for the full summary and
+how to apply them on vanilla upstream.
+
+The `Dockerfile` does not apply them directly - it clones a pre-patched
+fork branch at a pinned SHA, for the reasons explained in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Preflight
+
+`preflight.sh` ships inside the image at `/preflight.sh`. The GitHub
+Actions `test-build.yml` workflow runs it on every PR. Run it locally:
+
+```
+docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a \
+    bash /preflight.sh
+# expected final line: "5/5 checks PASS"
+```
+
+The five checks:
+
+1. `deep_ep.ElasticBuffer` importable and has the expected class path.
+2. `deep_ep.buffers.legacy.Buffer` importable (V1-compat shim retained).
+3. `ldconfig -p` sees `libnccl-net-ofi.so`.
+4. `/opt/aws-ofi-nccl/lib/libnccl-net-ofi.so` physically exists.
+5. DeepEP PR #612 patches landed in the cloned tree
+   (`num_allocated_qps` clamp + `EFA fast path` marker).
+
+## License
+
+Apache 2.0. See `LICENSE`. DeepEP and aws-ofi-nccl sources carry their
+own upstream licenses, unmodified; this repository contributes only the
+build glue (`Dockerfile`, `preflight.sh`, CI, patch extracts).
+
+## Repository layout
+
+```
+.
+|-- Dockerfile                     # The base image recipe (~240 lines)
+|-- preflight.sh                   # 5-check validation harness
+|-- LICENSE                        # Apache 2.0
+|-- .github/workflows/
+|   |-- build-and-push.yml         # Tag push -> build + push to GHCR
+|   `-- test-build.yml             # PR / main push -> build-only + preflight
+|-- patches/
+|   |-- 0001-*.patch               # auto-QP cap at 2 on EFA
+|   |-- 0002-*.patch               # get_rdma_gbs EFA fast path
+|   |-- 0003-*.patch               # kScaleoutUpdateInterval 3 -> 16
+|   `-- README.md
+`-- docs/
+    |-- ARCHITECTURE.md            # What's in the image + why
+    |-- USAGE.md                   # FROM examples + runtime env + K8s
+    `-- CHANGELOG.md               # Release notes
+```
