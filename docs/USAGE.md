@@ -6,7 +6,37 @@
 docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
 ```
 
-GHCR packages are public. No authentication needed for `docker pull`.
+If the pull fails with `unauthorized: ...`, the GHCR package is still
+private (GitHub's default for org-scoped packages on first publish).
+An org admin can flip it to public in the GitHub web UI:
+
+```
+Org page -> Packages -> deepep-v2-efa-base -> Package settings
+                                            -> Danger Zone
+                                            -> Change package visibility
+                                            -> Public
+```
+
+Until that flip happens, authenticate with a PAT that has the
+`read:packages` scope:
+
+```
+echo "<gh-pat>" | docker login ghcr.io -u <gh-user> --password-stdin
+docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+```
+
+In a GitHub Actions job the same pull works without any PAT:
+
+```yaml
+- uses: docker/login-action@v3
+  with:
+    registry: ghcr.io
+    username: ${{ github.actor }}
+    password: ${{ secrets.GITHUB_TOKEN }}
+```
+
+provided the calling repo is under the same org (or the calling
+workflow's `permissions:` block requests `packages: read`).
 
 ## Smoke test the image (single node, no EFA required)
 
