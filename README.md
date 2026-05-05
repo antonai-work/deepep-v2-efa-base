@@ -5,11 +5,39 @@ in the image is DeepEP V2 (NCCL Gin backend) built against AWS EFA + the
 aws-ofi-nccl GIN plugin, pinned at commits that produce a working 2-node
 dispatch + combine loop on `p5.48xlarge` (H100) and `p5en.48xlarge` (H200).
 
+**Status:** Release `v0.1.0-sm90a` published to `ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a` (2026-05-05). Vanilla build verified locally; fast-path public pull pending GHCR package visibility flip.
+
 The image is meant to be consumed by downstream inference and training
 repos via a single `FROM ghcr.io/antonai-work/deepep-v2-efa-base:<tag>`
 directive. Each engine integration (vLLM, SGLang, Megatron-LM, NeMo-RL,
 etc.) adds its own runtime on top without re-solving the CUDA + EFA +
 NCCL + aws-ofi-nccl + DeepEP build problem.
+
+## Sibling repos (reproducibility triad)
+
+| Repo | Purpose | Status |
+|---|---|---|
+| [deepep-v2-efa-base](https://github.com/antonai-work/deepep-v2-efa-base) | Base substrate (this repo) | v0.1.0-sm90a released |
+| [nemo-rl-deepep-v2-efa](https://github.com/antonai-work/nemo-rl-deepep-v2-efa) | Training stack (Megatron-LM + NeMo-RL) | Dual-path build verified 2026-05-05 |
+| [vllm-deepep-v2-efa](https://github.com/antonai-work/vllm-deepep-v2-efa) | Inference stack (vLLM + TRT-LLM) | Dual-path build verified 2026-05-05 |
+
+Together, these three repos provide end-to-end DeepEP V2 MoE reproducibility on AWS EFA, from base substrate through training and inference.
+
+## Upstream PRs
+
+Five PRs filed 2026-04-28 through 2026-05-05, covering the full training + inference stack. All five are independent, EFA-specific, and safe on non-EFA fabrics:
+
+| Upstream repo | PR | Status (2026-05-05) | Applies to |
+|---|---|---|---|
+| [deepseek-ai/DeepEP](https://github.com/deepseek-ai/DeepEP) | [#612](https://github.com/deepseek-ai/DeepEP/pull/612) | OPEN, rebased 2026-05-05 | Base substrate (all frameworks) |
+| [NVIDIA/Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | [#4632](https://github.com/NVIDIA/Megatron-LM/pull/4632) | DRAFT | Training |
+| [NVIDIA-NeMo/RL](https://github.com/NVIDIA-NeMo/RL) | [#2410](https://github.com/NVIDIA-NeMo/RL/pull/2410) | DRAFT | Training |
+| [NVIDIA-NeMo/RL](https://github.com/NVIDIA-NeMo/RL) | [#2411](https://github.com/NVIDIA-NeMo/RL/pull/2411) | DRAFT | Training (dep pin bump) |
+| [sgl-project/sglang](https://github.com/sgl-project/sglang) | [#24443](https://github.com/sgl-project/sglang/pull/24443) | DRAFT | Inference |
+
+Plus: [vllm-project/vllm#41183](https://github.com/vllm-project/vllm/pull/41183) augmented with EFA traffic evidence via comment (OPEN, actively reviewed).
+
+DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-specific PRs are consumed by the sibling repos.
 
 ## What's inside
 
@@ -96,6 +124,18 @@ The `Dockerfile` does not apply them directly - it clones a pre-patched
 fork branch at a pinned SHA, for the reasons explained in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+## Validation
+
+Cross-framework evidence (2-node EFA traffic, NCCL init markers, DeepEP dispatch+combine latencies, loss curves) is documented across the three repos:
+
+| Document | Location | Coverage |
+|---|---|---|
+| VALIDATION-EVIDENCE.md | Base + both sibling repos | Per-framework E2E proofs (24-token chat completion, 3-step training loss, etc.) |
+| EFA-TRAFFIC-EVIDENCE.md | Base + both sibling repos | Hardware-counter proof of MoE traffic over EFA (not NVLink) |
+| DEEPEP-BENCHMARKS.md | Base + both sibling repos | Microbenchmark guide (D+C latency, low-latency kernel, output interpretation) |
+
+Base substrate D+C latency: ~740 us p50 on 2-node p5en.48xlarge (H200), ~930 us on p5.48xlarge (H100).
+
 ## Continuous Integration
 
 This repository provides two independent build paths:
@@ -134,6 +174,10 @@ The five checks:
 5. DeepEP PR #612 patches landed in the cloned tree
    (`num_allocated_qps` clamp + `EFA fast path` marker).
 
+## Build modes
+
+Two build modes available (GitHub Actions default, CodeBuild opt-in). Both produce identical output and pass the same 5-check preflight gate. See sibling repos for detailed fast-vs-vanilla comparison.
+
 ## License
 
 Apache 2.0. See `LICENSE`. DeepEP and aws-ofi-nccl sources carry their
@@ -162,5 +206,8 @@ build glue (`Dockerfile`, `preflight.sh`, CI, patch extracts).
 `-- docs/
     |-- ARCHITECTURE.md            # What's in the image + why
     |-- USAGE.md                   # FROM examples + runtime env + K8s
+    |-- VALIDATION-EVIDENCE.md     # Cross-framework E2E evidence
+    |-- EFA-TRAFFIC-EVIDENCE.md    # Hardware-counter EFA proofs
+    |-- DEEPEP-BENCHMARKS.md       # Microbenchmark guide
     `-- CHANGELOG.md               # Release notes
 ```
