@@ -173,3 +173,28 @@ To move from `v0.1.0-sm90a` to a later release, edit your child
 Dockerfile's `FROM` line and rebuild. There is no `:latest` on
 purpose - every consumer must name an exact release so builds
 reproduce.
+
+## Reproducibility contract: pin the digest or sha-tag
+
+The release-name tag (e.g. `:v0.1.0-sm90a`) is the recommended
+human-readable pin, but it is still a **release-name tag**: if a future
+patch release (`v0.1.1-sm90a`, etc.) is ever retagged to the same name
+by accident, the name would move. The GHA workflow at
+`.github/workflows/build-and-push.yml` deliberately publishes only two
+tags per release -- the release name itself and the immutable
+`:sha-<short-git-sha>` tag -- so consumers who require true immutability
+should pin one of:
+
+1. **Image digest** (strongest): captured at `docker pull` time from
+   `docker inspect --format='{{index .RepoDigests 0}}'` and referenced
+   as `ghcr.io/antonai-work/deepep-v2-efa-base@sha256:<digest>`.
+2. **`:sha-<short-git-sha>` tag** (equivalent for this workflow): the
+   short SHA is content-addressable to a single commit on `main`, and
+   the workflow never republishes the same sha-tag to a different
+   build.
+
+Use the release-name tag for human-readable pod specs and
+documentation; use the digest or sha-tag for anything that must be
+byte-reproducible over time (CI base-image pins, SBOMs, compliance
+records). This mirrors the god-mode F3 review recommendation from
+2026-05-05.

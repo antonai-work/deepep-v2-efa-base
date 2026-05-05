@@ -151,11 +151,19 @@ RUN set -eux; \
 # -----------------------------------------------------------------------------
 # PyTorch + NCCL 2.30.4 via pip (DeepEP V2 upstream README recommends this
 # over building NCCL from source, so the JIT can find headers automatically)
+#
+# Pinned to torch==2.9.1 -- the version resolved and proven during our
+# sglang overlay build on 2026-04-24 (see bench/logs/sglang-build-
+# 20260424T230559Z.log). An `==` pin is required here because DeepEP V2's
+# `_C.so` is built against a specific torch C++ ABI; a silent bump to
+# torch 3.0 on download.pytorch.org/whl/cu129 would break JIT loads
+# across every consumer overlay. Both the cu129 and cu128 indexes carry
+# the 2.9.1+cu12x wheel (verified 2026-05-05).
 # -----------------------------------------------------------------------------
 RUN pip install --no-cache-dir --break-system-packages \
-      torch --index-url https://download.pytorch.org/whl/cu129 \
+      "torch==2.9.1" --index-url https://download.pytorch.org/whl/cu129 \
  || pip install --no-cache-dir --break-system-packages \
-      torch --index-url https://download.pytorch.org/whl/cu128
+      "torch==2.9.1" --index-url https://download.pytorch.org/whl/cu128
 
 # numpy<2 is required at runtime by torch.distributed.all_gather_object
 # (DeepEP V2's ElasticBuffer.__init__ calls it from get_nccl_comm_handle).
@@ -174,7 +182,7 @@ RUN set -eux; \
 
 RUN set -eux; \
     pip install --no-cache-dir --break-system-packages --no-deps \
-      "nvidia-nccl-cu13>=2.30.4"; \
+      "nvidia-nccl-cu13==2.30.4"; \
     NCCL_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     echo "NCCL_LIB=${NCCL_LIB}"; \
     test -n "${NCCL_LIB}"; \
@@ -195,7 +203,7 @@ RUN set -eux; \
 # The wheel only ships libnvshmem_host.so.X (versioned), but DeepEP's link
 # line uses `-l:libnvshmem_host.so` (unversioned). Create the symlink.
 RUN pip install --no-cache-dir --break-system-packages \
-      "nvidia-nvshmem-cu12>=3.3.9" \
+      "nvidia-nvshmem-cu12==3.3.9" \
  && NVSHMEM_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nvshmem/lib' -type d 2>/dev/null | head -1)" \
  && test -n "${NVSHMEM_LIB}" && test -d "${NVSHMEM_LIB}" \
  && ls "${NVSHMEM_LIB}" \

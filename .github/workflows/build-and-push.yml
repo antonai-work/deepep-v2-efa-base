@@ -2,11 +2,15 @@ name: build-and-push
 
 # Triggers on any tag matching v*. The expected first release tag is
 # v0.1.0-sm90a. Pushes the built image to GHCR under
-# ghcr.io/antonai-work/deepep-v2-efa-base with three tags:
-#   :<tag-name>       (e.g. :v0.1.0-sm90a)
-#   :sha-<commit-sha> (short git SHA, for exact reproducibility)
-#   :v0.1.0-sm90a     (alias on first release, kept as the recommended
-#                      consumer tag until a v0.2 tag displaces it)
+# ghcr.io/antonai-work/deepep-v2-efa-base with two tags:
+#   :<tag-name>       (e.g. :v0.1.0-sm90a) -- the specific release name
+#   :sha-<commit-sha> (short git SHA)      -- immutable reproducibility pin
+#
+# NOTE: we intentionally do NOT publish a floating alias tag (e.g. an
+# unconditional :v0.1.0-sm90a republish on every future v0.1.1 push).
+# Downstream consumers that require immutability must pin the
+# :sha-<commit-sha> tag or the image digest. See docs/USAGE.md.
+# (god-mode F3, fixed 2026-05-05.)
 #
 # The free Ubuntu runners only have ~14 GB free disk out of ~30 GB total by
 # default, which is not enough for a CUDA 12.9 devel image. easimon's
@@ -81,7 +85,6 @@ jobs:
           tags: |
             ghcr.io/antonai-work/deepep-v2-efa-base:${{ github.ref_name }}
             ghcr.io/antonai-work/deepep-v2-efa-base:sha-${{ steps.meta.outputs.short_sha }}
-            ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
