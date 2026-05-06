@@ -34,14 +34,14 @@
 #                                            is linked at DeepEP build time;
 #                                            runtime does not call NVSHMEM
 #                                            when DEEP_EP_BACKEND=nccl.
-#   DeepEP       146cc356aa00c39ac1590c05775e05b0f031e70c
+#   DeepEP       c84dcac613c8df743a6487a312bbc966c745c600
 #                on branch aws-efa-auto-qp-cap-v2 of
 #                github.com/dmvevents/DeepEP-1 (fork of deepseek-ai/DeepEP@main
 #                post-PR #605 merge b306af0), carrying the three PR #612
 #                commits:
 #                  fe20874  aws-efa: cap auto-QP at 2
 #                  0b78333  aws-efa: EFA fast path in get_rdma_gbs
-#                  146cc356  aws-efa: raise kScaleoutUpdateInterval 3 -> 16
+#                  c84dcac  aws-efa: raise kScaleoutUpdateInterval 3 -> 16
 #                The patches/ directory in this repo carries the same three
 #                commits as reviewable .patch files; see docs/ARCHITECTURE.md
 #                for why we clone the pre-patched branch rather than apply
@@ -271,7 +271,7 @@ RUN set -eux; \
 # -----------------------------------------------------------------------------
 ARG DEEPEP_FORK=https://github.com/dmvevents/DeepEP-1.git
 ARG DEEPEP_BRANCH=aws-efa-auto-qp-cap-v2
-ARG DEEPEP_SHA=146cc356aa00c39ac1590c05775e05b0f031e70c
+ARG DEEPEP_SHA=c84dcac613c8df743a6487a312bbc966c745c600
 
 RUN set -eux; \
     git clone --recurse-submodules "${DEEPEP_FORK}" /opt/DeepEP; \
@@ -325,6 +325,6 @@ LABEL org.opencontainers.image.title="deepep-v2-efa-base" \
       org.opencontainers.image.source="https://github.com/antonai-work/deepep-v2-efa-base" \
       org.opencontainers.image.licenses="Apache-2.0" \
       deepep.branch="aws-efa-auto-qp-cap-v2" \
-      deepep.sha="146cc356aa00c39ac1590c05775e05b0f031e70c" \
+      deepep.sha="c84dcac613c8df743a6487a312bbc966c745c600" \
       aws-ofi-nccl.sha="6e504db3403931cde43a2335adcc73fbc69cccac" \
       efa.installer="1.48.0"
