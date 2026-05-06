@@ -504,15 +504,13 @@ RUN set -eux; \
 # /opt/aws-ofi-nccl is retained for overlays that need --with-nccl behaviour.
 # -----------------------------------------------------------------------------
 ARG AWS_OFI_NCCL_SHA=206c02c478c6d724af09c3cbca59c06863a0b9c0
-COPY assets/p5.48xl-topo.xml /tmp/p5.48xl-topo.xml
-COPY patches/0004-aws-ofi-nccl-p5-topology.patch /tmp/
 RUN set -eux; \
     source /etc/wave12-cuda13.env; \
     test -n "${CU13_ROOT}"; \
     git clone https://github.com/aws/aws-ofi-nccl.git /var/build-scratch/aws-ofi-nccl; \
     cd /var/build-scratch/aws-ofi-nccl; \
     git checkout "${AWS_OFI_NCCL_SHA}"; \
-    git apply /tmp/0004-aws-ofi-nccl-p5-topology.patch; \
+ \
     ./autogen.sh; \
     NCCL_INCLUDE_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/include' -type d 2>/dev/null | head -1)"; \
     NCCL_LIB_DIR_OFI="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
