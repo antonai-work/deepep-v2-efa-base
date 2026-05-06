@@ -63,7 +63,7 @@
 #                                            Wave 11's c10::cuda::SetDevice
 #                                            -112 crash at MoE dispatch.)
 #                                            apt libnccl2 2.26.x is purged
-#   aws-ofi-nccl 701339b647b76a77ff78da0810b4b6ca8c2b4c3c (2026-05-06)
+#   aws-ofi-nccl 206c02c478c6d724af09c3cbca59c06863a0b9c0 (2026-05-06)
 #                                            github.com/aws/aws-ofi-nccl
 #                                            "gin: Size active_put_signal to
 #                                            full sequence number space"
@@ -72,7 +72,7 @@
 #                                            workaround). Built with
 #                                            --enable-platform-aws against the
 #                                            NCCL 2.30.4 pip wheel headers.
-#                                            Wave 16: bumped to 701339b6 (May 6)
+#                                            Wave 16: bumped to 206c02c4 (May 6)
 #                                            + baked-in p5.48xlarge topology
 #                                            XML (122 nodes, fixes NCCL
 #                                            "too many XML nodes (max 256)"
@@ -503,7 +503,7 @@ RUN set -eux; \
 # it is built --disable-nccl-net-library and therefore NCCL-version-agnostic;
 # /opt/aws-ofi-nccl is retained for overlays that need --with-nccl behaviour.
 # -----------------------------------------------------------------------------
-ARG AWS_OFI_NCCL_SHA=701339b647b76a77ff78da0810b4b6ca8c2b4c3c
+ARG AWS_OFI_NCCL_SHA=206c02c478c6d724af09c3cbca59c06863a0b9c0
 COPY assets/p5.48xl-topo.xml /tmp/p5.48xl-topo.xml
 COPY patches/0004-aws-ofi-nccl-p5-topology.patch /tmp/
 RUN set -eux; \
