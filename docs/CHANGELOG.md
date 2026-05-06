@@ -6,7 +6,39 @@ here. The source repo follows [semver](https://semver.org/) on the
 where `sm90a` indicates the CUDA compute capability target (H100,
 H200).
 
-## v0.2.1-sm90a - 2026-05-06
+## v0.2.2-sm90a - 2026-05-06
+
+**Wave 16: bake p5.48xlarge topology XML + bump aws-ofi-nccl to 701339b6.**
+
+### Fixed
+- Baked-in `assets/p5.48xl-topo.xml` (122 XML nodes, validated in Wave 15
+  ConfigMap) into both `/opt/aws-ofi-nccl/share/aws-ofi-nccl/xml/` and
+  `/opt/amazon/ofi-nccl/share/aws-ofi-nccl/xml/` paths. Eliminates NCCL
+  "too many XML nodes (max 256)" failure on AWS HyperPod EKS P5.48xlarge
+  during PCI auto-discovery — the root cause of Wave 15's blocker.
+- Created `patches/0004-aws-ofi-nccl-p5-topology.patch` to auto-register
+  the topology XML in `src/platform-aws.cpp`. The new entry sits above
+  the wildcard `p5/p5e` regex entry so exact-match instances resolve
+  first. Without this platform_data registration, the XML file is present
+  but never loaded, and we'd still need to manually set `NCCL_TOPO_FILE`
+  per deployment.
+- Bumped `AWS_OFI_NCCL_SHA` from `6e504db3` (2026-04-24) to `701339b6`
+  (2026-05-06) to pick up any upstream fixes between Apr 24 and May 6
+  (verified clean - no breaking changes in the 8 commits landed).
+
+### Downstream impact
+- All consumer overlays (`vllm-deepep-v2-efa`, `nemo-rl-deepep-v2-efa`,
+  `trtllm-deepep-v2-efa`, and any future sibling) should bump their base
+  `FROM` to `v0.2.2-sm90a` to eliminate the HyperPod 256-node blocker.
+  v0.2.1 continues to work on non-HyperPod clusters (e.g. normal EC2
+  or self-managed EKS) that don't hit the NCCL 256-node cap.
+
+### Notes
+- The P5 topology XML patch will be filed upstream to `aws/aws-ofi-nccl`
+  as a separate PR (draft saved to `/tmp/wave16/upstream-p5-topology.patch`).
+  Once merged, the next version of this image can drop the local patch.
+
+## v0.2.1-sm90a - 2026-05-06 (SUPERSEDED by v0.2.2)
 
 **Wave 12 completes the cu13 migration that Wave 10 left partial.**
 

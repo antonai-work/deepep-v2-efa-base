@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anton Alexander <dmvevents@gmail.com>
+Date: Tue, 6 May 2026 19:15:00 +0000
+Subject: [PATCH] aws-ofi-nccl: register p5.48xlarge topology XML
+
+Add platform_data entry for p5.48xlarge with the baked-in topology
+XML file (p5.48xl-topo.xml). This entry must appear BEFORE the
+wildcard p5/p5e regex entry so exact-match instances are resolved
+before regex fallback.
+
+Without this entry, NCCL auto-discovery on HyperPod P5.48xlarge
+overflows the 256 XML node cap during PCI topology enumeration,
+causing "too many XML nodes" failure on first cross-node NCCL
+operation.
+
+Fixes Wave 15 blocker on AWS HyperPod EKS.
+---
+ src/platform-aws.cpp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/platform-aws.cpp b/src/platform-aws.cpp
+index 1234567..abcdefg 100644
+--- a/src/platform-aws.cpp
++++ b/src/platform-aws.cpp
+@@ -125,6 +125,19 @@ const PlatformAWS::ec2_platform_data PlatformAWS::platform_data_map[] = {
+ 		.default_protocol = PROTOCOL::SENDRECV,
+ 		.env = {},
+ 	},
++	{
++		.name = "p5.48xlarge",
++		.regex = NULL,
++		.topology = "p5.48xl-topo.xml",
++		.default_dup_conns = 0,
++		.latency = 75.0,
++		.gdr_required = true,
++		.default_protocol = PROTOCOL::RDMA,
++		.env = {
++			{ "NCCL_BUFFSIZE", "8388608" },
++			{ "NCCL_P2P_NET_CHUNKSIZE", "524288" },
++		},
++	},
+ 	{
+ 		.name = "p5/p5e",
+ 		.regex = "^p5(e?\\..*)",
+--
+2.43.0

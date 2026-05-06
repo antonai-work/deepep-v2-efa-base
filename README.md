@@ -5,7 +5,7 @@ in the image is DeepEP V2 (NCCL Gin backend) built against AWS EFA + the
 aws-ofi-nccl GIN plugin, pinned at commits that produce a working 2-node
 dispatch + combine loop on `p5.48xlarge` (H100) and `p5en.48xlarge` (H200).
 
-**Status:** Release `v0.2.1-sm90a` published to `ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.1-sm90a` (2026-05-06, Wave 13 cu13-unified). Last validated 2026-05-06.
+**Status:** Release `v0.2.2-sm90a` published to `ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.2-sm90a` (2026-05-06, Wave 16 P5 topology XML fix). Last validated 2026-05-06.
 
 The image is meant to be consumed by downstream inference and training
 repos via a single `FROM ghcr.io/antonai-work/deepep-v2-efa-base:<tag>`
@@ -17,7 +17,7 @@ NCCL + aws-ofi-nccl + DeepEP build problem.
 
 | Repo | Purpose | Status |
 |---|---|---|
-| [deepep-v2-efa-base](https://github.com/antonai-work/deepep-v2-efa-base) | Base substrate (this repo) | v0.2.1-sm90a released |
+| [deepep-v2-efa-base](https://github.com/antonai-work/deepep-v2-efa-base) | Base substrate (this repo) | v0.2.2-sm90a released |
 | [nemo-rl-deepep-v2-efa](https://github.com/antonai-work/nemo-rl-deepep-v2-efa) | Training stack (Megatron-LM + NeMo-RL) | Dual-path build verified 2026-05-06 |
 | [vllm-deepep-v2-efa](https://github.com/antonai-work/vllm-deepep-v2-efa) | Inference stack (vLLM + TRT-LLM) | Dual-path build verified 2026-05-06 |
 
@@ -58,7 +58,7 @@ DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-sp
 ## Consuming the image
 
 ```dockerfile
-FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.1-sm90a
+FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.2-sm90a
 
 # Your engine install goes here.
 RUN pip install --no-cache-dir --break-system-packages vllm==<pin>
@@ -93,7 +93,8 @@ examples.
 
 | Tag | Meaning |
 |---|---|
-| `v0.2.1-sm90a` | Current stable release (cu13-unified, CUDA 13.0 runtime, Wave 13 cluster-validated 2026-05-06). Targeted SM arch: `9.0a` (H100 + H200). ECR digest: `sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974`. GHCR digest: `sha256:783fab846df7416d6ba91f0015ab51622edde5c17025b8808e2e3e6a8561953b`. |
+| `v0.2.2-sm90a` | Current stable release (cu13-unified + P5 topology XML baked-in, Wave 16). Targeted SM arch: `9.0a` (H100 + H200). Fixes NCCL "too many XML nodes (max 256)" on HyperPod P5.48xlarge. |
+| `v0.2.1-sm90a` | Superseded (cu13-unified, Wave 13 — missing P5 topology XML, caused NCCL 256-node overflow on first 2-node cross-node test on HyperPod). ECR digest: `sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974`. GHCR digest: `sha256:783fab846df7416d6ba91f0015ab51622edde5c17025b8808e2e3e6a8561953b`. |
 | `v0.2.0-sm90a` | Superseded (partial cu13: NCCL flipped but torch still cu129; caused `c10::cuda::SetDevice(-64)` at MoE dispatch — see Wave 8 retrospective). |
 | `v0.1.2-sm90a` | Superseded (cu12 + bfded348 DeepEP baseline; NCCL pinned to 2.30.4). |
 | `v0.1.0-sm90a` | First public release (cu12-based). Deprecated. |
@@ -101,7 +102,7 @@ examples.
 | `sha-<short>` | Exact git SHA of the `Dockerfile` + patches that produced the image, for audit / bisect. |
 
 All tags under `ghcr.io/antonai-work/deepep-v2-efa-base`. There is
-intentionally **no `latest` tag** - pin to `v0.2.1-sm90a` (or newer) so
+intentionally **no `latest` tag** - pin to `v0.2.2-sm90a` (or newer) so
 downstream images rebuild deterministically.
 
 ## Why this repo exists

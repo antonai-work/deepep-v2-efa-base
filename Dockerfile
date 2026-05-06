@@ -63,7 +63,7 @@
 #                                            Wave 11's c10::cuda::SetDevice
 #                                            -112 crash at MoE dispatch.)
 #                                            apt libnccl2 2.26.x is purged
-#   aws-ofi-nccl 6e504db3403931cde43a2335adcc73fbc69cccac (2026-04-24)
+#   aws-ofi-nccl 701339b647b76a77ff78da0810b4b6ca8c2b4c3c (2026-05-06)
 #                                            github.com/aws/aws-ofi-nccl
 #                                            "gin: Size active_put_signal to
 #                                            full sequence number space"
@@ -72,6 +72,11 @@
 #                                            workaround). Built with
 #                                            --enable-platform-aws against the
 #                                            NCCL 2.30.4 pip wheel headers.
+#                                            Wave 16: bumped to 701339b6 (May 6)
+#                                            + baked-in p5.48xlarge topology
+#                                            XML (122 nodes, fixes NCCL
+#                                            "too many XML nodes (max 256)"
+#                                            on HyperPod P5 during auto-discovery).
 #   GDRCopy      v2.5.1                      github.com/NVIDIA/gdrcopy
 #   NVSHMEM      nvidia-nvshmem-cu13>=3.4.5  pip wheel. Only libnvshmem_host.so
 #                                            is linked at DeepEP build time;
@@ -498,13 +503,16 @@ RUN set -eux; \
 # it is built --disable-nccl-net-library and therefore NCCL-version-agnostic;
 # /opt/aws-ofi-nccl is retained for overlays that need --with-nccl behaviour.
 # -----------------------------------------------------------------------------
-ARG AWS_OFI_NCCL_SHA=6e504db3403931cde43a2335adcc73fbc69cccac
+ARG AWS_OFI_NCCL_SHA=701339b647b76a77ff78da0810b4b6ca8c2b4c3c
+COPY assets/p5.48xl-topo.xml /tmp/p5.48xl-topo.xml
+COPY patches/0004-aws-ofi-nccl-p5-topology.patch /tmp/
 RUN set -eux; \
     source /etc/wave12-cuda13.env; \
     test -n "${CU13_ROOT}"; \
     git clone https://github.com/aws/aws-ofi-nccl.git /var/build-scratch/aws-ofi-nccl; \
     cd /var/build-scratch/aws-ofi-nccl; \
     git checkout "${AWS_OFI_NCCL_SHA}"; \
+    git apply /tmp/0004-aws-ofi-nccl-p5-topology.patch; \
     ./autogen.sh; \
     NCCL_INCLUDE_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/include' -type d 2>/dev/null | head -1)"; \
     NCCL_LIB_DIR_OFI="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
@@ -525,6 +533,8 @@ RUN set -eux; \
       --disable-tests; \
     make -j"$(nproc)"; \
     make install; \
+    install -D -m 0644 /tmp/p5.48xl-topo.xml /opt/aws-ofi-nccl/share/aws-ofi-nccl/xml/p5.48xl-topo.xml; \
+    install -D -m 0644 /tmp/p5.48xl-topo.xml /opt/amazon/ofi-nccl/share/aws-ofi-nccl/xml/p5.48xl-topo.xml; \
     nm -D /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep -q ncclGinPlugin; \
     echo "[wave12] aws-ofi-nccl libcudart linkage:"; \
     ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep libcudart || echo "[wave12] (no libcudart linkage - plugin does not call CUDA runtime directly)"; \
