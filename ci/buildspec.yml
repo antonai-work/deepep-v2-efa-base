@@ -9,7 +9,7 @@ version: 0.2
 env:
   variables:
     ECR_REPO: "deepep-v2-efa-base"
-    BASE_VERSION_TAG: "v0.1.2-sm90a"
+    BASE_VERSION_TAG: "v0.2.0-sm90a"
 
 phases:
   pre_build:
@@ -29,6 +29,7 @@ phases:
       - echo "[pins] DEEPEP_BRANCH=${DEEPEP_BRANCH}"
       - echo "[pins] DEEPEP_SHA=${DEEPEP_SHA}"
       - echo "[pins] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"
+      - echo "[pins] TORCH_INDEX=${TORCH_INDEX}"
 
   build:
     commands:
@@ -39,6 +40,7 @@ phases:
           --build-arg DEEPEP_BRANCH="${DEEPEP_BRANCH}" \
           --build-arg DEEPEP_SHA="${DEEPEP_SHA}" \
           --build-arg NVIDIA_NCCL_PIN="${NVIDIA_NCCL_PIN}" \
+          --build-arg TORCH_INDEX="${TORCH_INDEX}" \
           -t "${ECR_REPO_URI}:${IMAGE_TAG}" .
       - docker tag ${ECR_REPO_URI}:${IMAGE_TAG} ${ECR_REPO_URI}:${COMMIT_SHA}
 
