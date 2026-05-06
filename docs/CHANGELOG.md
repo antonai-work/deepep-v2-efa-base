@@ -6,7 +6,86 @@ here. The source repo follows [semver](https://semver.org/) on the
 where `sm90a` indicates the CUDA compute capability target (H100,
 H200).
 
-## v0.1.0-sm90a - 2026-05-05
+## v0.2.1-sm90a - 2026-05-06
+
+**Wave 12 completes the cu13 migration that Wave 10 left partial.**
+
+### Fixed
+- `pins.env` flips `TORCH_INDEX` from `cu129` to `cu130`. Wave 10
+  (v0.2.0-sm90a) shipped NCCL on cu13 while leaving torch on cu129;
+  Wave 11 runtime-tested that image and confirmed the libcudart TLS
+  split persists at the torch/vllm._C boundary with
+  `c10::cuda::SetDevice` receiving error code `-112` at MoE dispatch.
+  torch 2.11.0+cu130 is now a stable wheel and pulls `cuda-toolkit==
+  13.0.2` transitively, which provides `nvidia-cuda-runtime==13.0.96`
+  (libcudart.so.13) and - via the explicit `cuda-toolkit[nvcc,crt,cccl]
+  ==13.0.2` install added to the Dockerfile - `nvidia-cuda-nvcc==
+  13.0.88` (nvcc 13). DeepEP's `pip install -e .` now finds the cu13
+  nvcc and its major-version check passes.
+- NVSHMEM flipped from `nvidia-nvshmem-cu12==3.3.9` to
+  `nvidia-nvshmem-cu13>=3.4.5` to match torch cu130's libcudart.so.13.
+  Leaving NVSHMEM on cu12 would reintroduce the TLS split Wave 12 is
+  closing.
+- aws-ofi-nccl build now uses the cu13 wheel toolchain (`CU13_ROOT`)
+  for `--with-cuda` + `CPPFLAGS`/`LDFLAGS`, and its build step
+  hard-fails if the resulting plugin links libcudart.so.12.
+- DeepEP `_C.so` build is now hardened: the Dockerfile asserts that
+  the produced shared object does not link libcudart.so.12.
+- `preflight.sh` check 6 (new) verifies torch.version.cuda is 13.x,
+  DeepEP `_C.so` is not cu12-linked, the NCCL wheel is cu13 >=2.30.4,
+  and ldconfig surfaces libcudart.so.13. This is the direct Wave 12
+  invariant.
+
+### Downstream impact
+- All three consumer overlays (`vllm-deepep-v2-efa`,
+  `nemo-rl-deepep-v2-efa`, and any future sibling) must bump their
+  base `FROM` to `v0.2.1-sm90a`. Wave 13+ lands that bump.
+
+### Preflight
+- Expanded from 5/5 to 6/6. `bash /preflight.sh` prints
+  `6/6 checks PASS` on success.
+
+## v0.2.0-sm90a - 2026-05-06 (SUPERSEDED by v0.2.1)
+
+Wave 10 partial cu13 migration: NCCL flipped to cu13 but torch left
+on cu129. Wave 11 proved the libcudart TLS split still crashes
+`c10::cuda::SetDevice` at MoE dispatch. Do not consume.
+
+## v0.1.2-sm90a - 2026-05-06
+
+**Wave 9 cu12 unification - supersedes v0.1.0 and v0.1.1.**
+
+### Fixed
+- NCCL pip wheel flipped from `nvidia-nccl-cu13==2.30.4` to
+  `nvidia-nccl-cu12>=2.30.4`. Every other runtime component in this
+  image and in child images links `libcudart.so.12` (torch cu129 is
+  a CUDA 12.9 build, not cu13; DeepEP `_C.so` and vllm `_C.abi3.so`
+  are all cu12). Wave 8 evidence: child containers crashed with
+  `invalid device ordinal` (-48/-64/-128) at first MoE dispatch
+  because `libnccl.so.2` was the only runtime component linking
+  `libcudart.so.13`.
+- `pins.env` now carries `NVIDIA_NCCL_PIN=nvidia-nccl-cu12>=2.30.4`.
+  Both `.github/workflows/{build-and-push,test-build}.yml` and
+  `ci/buildspec.yml` source `pins.env` and pass the pin via
+  `--build-arg NVIDIA_NCCL_PIN=...`. The Dockerfile retains a
+  matching `ARG NVIDIA_NCCL_PIN=nvidia-nccl-cu12>=2.30.4` default.
+- `aws-ofi-nccl` build is unchanged: configure auto-finds the
+  installed `nvidia-nccl-cu*` headers regardless of cu12/cu13.
+
+### Downstream impact
+- All three consumer overlays (`vllm-deepep-v2-efa`,
+  `nemo-rl-deepep-v2-efa`, and any future sibling) must bump their
+  base FROM to `v0.1.2-sm90a`. Wave 9b and 9c land that bump.
+
+### Preflight
+- Unchanged. `bash /preflight.sh` still prints `5/5 checks PASS`.
+
+## v0.1.1-sm90a - 2026-05-06 (SUPERSEDED)
+
+Pins.env extraction (Wave 7d-1 OKR-1). Inherited the same cu13 NCCL
+poison as v0.1.0; do not consume.
+
+## v0.1.0-sm90a - 2026-05-05 (SUPERSEDED by v0.1.2)
 
 **First stable release.**
 

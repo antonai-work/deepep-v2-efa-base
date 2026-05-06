@@ -5,7 +5,7 @@
 ```
 +---------------------------------------------------------------+
 |  Child image: engine-deepep-v2 (vLLM, SGLang, Megatron, ...)  |
-|  FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a    |
+|  FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a    |
 +---------------------------------------------------------------+
                               |
                               v

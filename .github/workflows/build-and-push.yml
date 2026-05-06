@@ -1,13 +1,13 @@
 name: build-and-push
 
-# Triggers on any tag matching v*. The expected first release tag is
-# v0.1.0-sm90a. Pushes the built image to GHCR under
+# Triggers on any tag matching v*. As of Wave 9 (2026-05-06) the canonical
+# release tag is v0.1.2-sm90a. Pushes the built image to GHCR under
 # ghcr.io/antonai-work/deepep-v2-efa-base with two tags:
-#   :<tag-name>       (e.g. :v0.1.0-sm90a) -- the specific release name
+#   :<tag-name>       (e.g. :v0.1.2-sm90a) -- the specific release name
 #   :sha-<commit-sha> (short git SHA)      -- immutable reproducibility pin
 #
 # NOTE: we intentionally do NOT publish a floating alias tag (e.g. an
-# unconditional :v0.1.0-sm90a republish on every future v0.1.1 push).
+# unconditional :v0.1.2-sm90a republish on every future v0.1.3 push).
 # Downstream consumers that require immutability must pin the
 # :sha-<commit-sha> tag or the image digest. See docs/USAGE.md.
 # (god-mode F3, fixed 2026-05-05.)
@@ -76,6 +76,22 @@ jobs:
           short_sha="$(echo '${{ github.sha }}' | cut -c1-7)"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
+      - name: Load canonical pins from pins.env
+        # Single source of truth for fork/branch/SHA pins is ./pins.env at the
+        # repo root. This step sources it and emits the values as outputs so
+        # the build-push step can pass them via --build-arg, overriding the
+        # Dockerfile ARG defaults. Wave 7d-1 OKR-1: kills SHA drift.
+        id: pins
+        run: |
+          set -euo pipefail
+          test -f pins.env || (echo "pins.env missing at repo root" && exit 1)
+          # shellcheck disable=SC1091
+          . ./pins.env
+          echo "DEEPEP_FORK=${DEEPEP_FORK}"         >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_BRANCH=${DEEPEP_BRANCH}"     >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_SHA=${DEEPEP_SHA}"           >> "$GITHUB_OUTPUT"
+          echo "NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
@@ -85,6 +101,11 @@ jobs:
           tags: |
             ghcr.io/antonai-work/deepep-v2-efa-base:${{ github.ref_name }}
             ghcr.io/antonai-work/deepep-v2-efa-base:sha-${{ steps.meta.outputs.short_sha }}
+          build-args: |
+            DEEPEP_FORK=${{ steps.pins.outputs.DEEPEP_FORK }}
+            DEEPEP_BRANCH=${{ steps.pins.outputs.DEEPEP_BRANCH }}
+            DEEPEP_SHA=${{ steps.pins.outputs.DEEPEP_SHA }}
+            NVIDIA_NCCL_PIN=${{ steps.pins.outputs.NVIDIA_NCCL_PIN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

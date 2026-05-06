@@ -89,6 +89,47 @@ check_patches_applied() {
 }
 check "DeepEP PR #612 patches applied" check_patches_applied
 
+# ---------------------------------------------------------------------------
+# 6. Wave 12 cu13 runtime unification: torch reports cuda 13.0, DeepEP _C.so
+# does not link libcudart.so.12, and NCCL wheel is cu13. This is the key
+# invariant Wave 12 exists to enforce - if any of these fail, Wave 11's
+# c10::cuda::SetDevice(-112) crash at MoE dispatch will recur.
+# ---------------------------------------------------------------------------
+check_wave12_cu13_unified() {
+    python3 -c "
+import torch
+cv = torch.version.cuda
+assert cv is not None and cv.startswith('13.'), 'torch.version.cuda != 13.x: ' + repr(cv)
+print('torch.version.cuda=', cv, 'torch.__version__=', torch.__version__)
+" || return 1
+    # DeepEP _C.so must not link libcudart.so.12.
+    cso="$(find /opt/DeepEP -name '_C*.so' 2>/dev/null | head -1)"
+    [ -n "${cso}" ] || { echo "FATAL: no DeepEP _C.so found"; return 1; }
+    if ldd "${cso}" 2>/dev/null | grep -qE 'libcudart\.so\.12'; then
+        echo "FATAL: ${cso} links libcudart.so.12 - Wave 12 cu13 unification broken"
+        return 1
+    fi
+    # NCCL wheel is cu13.
+    python3 -c "
+import subprocess
+out = subprocess.check_output(['pip', 'show', 'nvidia-nccl-cu13'], stderr=subprocess.DEVNULL).decode()
+assert 'Version:' in out, 'nvidia-nccl-cu13 not installed'
+for line in out.splitlines():
+    if line.startswith('Version:'):
+        v = line.split(':', 1)[1].strip()
+        parts = tuple(map(int, v.split('.')))
+        assert parts >= (2, 30, 4), 'nccl ' + v + ' below 2.30.4 floor'
+        print('nvidia-nccl-cu13 version=', v)
+" || return 1
+    # libcudart.so.13 is the one ldconfig surfaces.
+    ldconfig -p | grep -qE 'libcudart\.so\.13' || {
+        echo "FATAL: ldconfig does not surface libcudart.so.13"
+        return 1
+    }
+    return 0
+}
+check "Wave 12 cu13 runtime unified" check_wave12_cu13_unified
+
 TOTAL=$((PASS+FAIL))
 if [ "$FAIL" -eq 0 ]; then
     echo "${PASS}/${TOTAL} checks PASS"

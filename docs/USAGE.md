@@ -3,7 +3,7 @@
 ## Pulling the image
 
 ```
-docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a
 ```
 
 If the pull fails with `unauthorized: ...`, the GHCR package is still
@@ -22,7 +22,7 @@ Until that flip happens, authenticate with a PAT that has the
 
 ```
 echo "<gh-pat>" | docker login ghcr.io -u <gh-user> --password-stdin
-docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+docker pull ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a
 ```
 
 In a GitHub Actions job the same pull works without any PAT:
@@ -41,13 +41,13 @@ workflow's `permissions:` block requests `packages: read`).
 ## Smoke test the image (single node, no EFA required)
 
 ```
-docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a \
+docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a \
     bash /preflight.sh
 # expected final line: "5/5 checks PASS"
 ```
 
 ```
-docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a \
+docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a \
     python3 -c "import deep_ep; print(deep_ep.ElasticBuffer)"
 # expected: <class 'deep_ep.buffers.elastic.ElasticBuffer'>
 ```
@@ -57,7 +57,7 @@ docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a \
 Minimal child Dockerfile that pip-installs vLLM on top:
 
 ```dockerfile
-FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a
 
 ARG VLLM_VERSION=0.19.1
 RUN pip install --no-cache-dir --break-system-packages \
@@ -95,7 +95,7 @@ Pod spec fragment (distilled):
 spec:
   containers:
   - name: deepep
-    image: ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+    image: ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a
     resources:
       limits:
         nvidia.com/gpu: 8
@@ -169,14 +169,14 @@ enumeration.
 
 ## Downgrading / upgrading tag
 
-To move from `v0.1.0-sm90a` to a later release, edit your child
+To move from `v0.1.2-sm90a` to a later release, edit your child
 Dockerfile's `FROM` line and rebuild. There is no `:latest` on
 purpose - every consumer must name an exact release so builds
 reproduce.
 
 ## Reproducibility contract: pin the digest or sha-tag
 
-The release-name tag (e.g. `:v0.1.0-sm90a`) is the recommended
+The release-name tag (e.g. `:v0.1.2-sm90a`) is the recommended
 human-readable pin, but it is still a **release-name tag**: if a future
 patch release (`v0.1.1-sm90a`, etc.) is ever retagged to the same name
 by accident, the name would move. The GHA workflow at

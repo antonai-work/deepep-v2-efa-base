@@ -4,12 +4,12 @@ version: 0.2
 # Builds the base image, runs preflight, pushes to ECR.
 # Environment variables required:
 #   AWS_ACCOUNT_ID, AWS_REGION, ECR_REPO (default: deepep-v2-efa-base)
-#   BASE_VERSION_TAG (default: v0.1.0-sm90a)
+#   BASE_VERSION_TAG (default: v0.1.2-sm90a)
 
 env:
   variables:
     ECR_REPO: "deepep-v2-efa-base"
-    BASE_VERSION_TAG: "v0.1.0-sm90a"
+    BASE_VERSION_TAG: "v0.2.1-sm90a"
 
 phases:
   pre_build:
@@ -20,11 +20,28 @@ phases:
       - export IMAGE_TAG="${BASE_VERSION_TAG}-amd64"
       - export COMMIT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
       - echo "Building ${ECR_REPO_URI}:${IMAGE_TAG}"
+      # Wave 7d-1 OKR-1: source canonical pins from pins.env at repo root so
+      # the build-args stay in sync across the three consumer repos. The
+      # Dockerfile retains hardcoded ARG defaults as fallback.
+      - 'test -f pins.env || (echo "ERROR: pins.env missing at repo root" && exit 1)'
+      - . ./pins.env
+      - echo "[pins] DEEPEP_FORK=${DEEPEP_FORK}"
+      - echo "[pins] DEEPEP_BRANCH=${DEEPEP_BRANCH}"
+      - echo "[pins] DEEPEP_SHA=${DEEPEP_SHA}"
+      - echo "[pins] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"
+      - echo "[pins] TORCH_INDEX=${TORCH_INDEX}"
 
   build:
     commands:
       - echo "Building Docker image..."
-      - docker build -t ${ECR_REPO_URI}:${IMAGE_TAG} .
+      - |
+        docker build \
+          --build-arg DEEPEP_FORK="${DEEPEP_FORK}" \
+          --build-arg DEEPEP_BRANCH="${DEEPEP_BRANCH}" \
+          --build-arg DEEPEP_SHA="${DEEPEP_SHA}" \
+          --build-arg NVIDIA_NCCL_PIN="${NVIDIA_NCCL_PIN}" \
+          --build-arg TORCH_INDEX="${TORCH_INDEX}" \
+          -t "${ECR_REPO_URI}:${IMAGE_TAG}" .
       - docker tag ${ECR_REPO_URI}:${IMAGE_TAG} ${ECR_REPO_URI}:${COMMIT_SHA}
 
   post_build:

@@ -72,7 +72,7 @@ aws codebuild create-project \
     name=AWS_ACCOUNT_ID,value=${AWS_ACCOUNT_ID},type=PLAINTEXT \
     name=AWS_REGION,value=${AWS_REGION},type=PLAINTEXT \
     name=ECR_REPO,value=deepep-v2-efa-base,type=PLAINTEXT \
-    name=BASE_VERSION_TAG,value=v0.1.0-sm90a,type=PLAINTEXT
+    name=BASE_VERSION_TAG,value=v0.1.2-sm90a,type=PLAINTEXT
 ```
 
 ## 4. Trigger Build

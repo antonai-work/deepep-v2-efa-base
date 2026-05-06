@@ -47,7 +47,7 @@ DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-sp
 | CUDA | `12.9.0` | nvidia/cuda registry |
 | EFA userspace | `1.48.0` | `efa-installer.amazonaws.com/aws-efa-installer-1.48.0.tar.gz`, `--build-ngc` path |
 | libfabric | `libfabric1-aws` (bundled with EFA 1.48.0) | EFA tarball |
-| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu13>=2.30.4` |
+| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu12>=2.30.4` (Wave 9: cu12, not cu13) |
 | aws-ofi-nccl | `6e504db3403931cde43a2335adcc73fbc69cccac` (2026-04-24) | `aws/aws-ofi-nccl@6e504db` |
 | GDRCopy | `v2.5.1` | `NVIDIA/gdrcopy@v2.5.1` |
 | NVSHMEM | `>= 3.3.9` | pip `nvidia-nvshmem-cu12>=3.3.9` |
