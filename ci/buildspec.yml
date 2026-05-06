@@ -20,11 +20,24 @@ phases:
       - export IMAGE_TAG="${BASE_VERSION_TAG}-amd64"
       - export COMMIT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
       - echo "Building ${ECR_REPO_URI}:${IMAGE_TAG}"
+      # Wave 7d-1 OKR-1: source canonical pins from pins.env at repo root so
+      # the build-args stay in sync across the three consumer repos. The
+      # Dockerfile retains hardcoded ARG defaults as fallback.
+      - test -f pins.env || (echo "ERROR: pins.env missing at repo root" && exit 1)
+      - . ./pins.env
+      - echo "[pins] DEEPEP_FORK=${DEEPEP_FORK}"
+      - echo "[pins] DEEPEP_BRANCH=${DEEPEP_BRANCH}"
+      - echo "[pins] DEEPEP_SHA=${DEEPEP_SHA}"
 
   build:
     commands:
       - echo "Building Docker image..."
-      - docker build -t ${ECR_REPO_URI}:${IMAGE_TAG} .
+      - |
+        docker build \
+          --build-arg DEEPEP_FORK="${DEEPEP_FORK}" \
+          --build-arg DEEPEP_BRANCH="${DEEPEP_BRANCH}" \
+          --build-arg DEEPEP_SHA="${DEEPEP_SHA}" \
+          -t "${ECR_REPO_URI}:${IMAGE_TAG}" .
       - docker tag ${ECR_REPO_URI}:${IMAGE_TAG} ${ECR_REPO_URI}:${COMMIT_SHA}
 
   post_build:

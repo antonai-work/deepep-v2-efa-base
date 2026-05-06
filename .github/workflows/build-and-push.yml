@@ -76,6 +76,21 @@ jobs:
           short_sha="$(echo '${{ github.sha }}' | cut -c1-7)"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
+      - name: Load canonical pins from pins.env
+        # Single source of truth for fork/branch/SHA pins is ./pins.env at the
+        # repo root. This step sources it and emits the values as outputs so
+        # the build-push step can pass them via --build-arg, overriding the
+        # Dockerfile ARG defaults. Wave 7d-1 OKR-1: kills SHA drift.
+        id: pins
+        run: |
+          set -euo pipefail
+          test -f pins.env || (echo "pins.env missing at repo root" && exit 1)
+          # shellcheck disable=SC1091
+          . ./pins.env
+          echo "DEEPEP_FORK=${DEEPEP_FORK}"     >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_BRANCH=${DEEPEP_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_SHA=${DEEPEP_SHA}"       >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
@@ -85,6 +100,10 @@ jobs:
           tags: |
             ghcr.io/antonai-work/deepep-v2-efa-base:${{ github.ref_name }}
             ghcr.io/antonai-work/deepep-v2-efa-base:sha-${{ steps.meta.outputs.short_sha }}
+          build-args: |
+            DEEPEP_FORK=${{ steps.pins.outputs.DEEPEP_FORK }}
+            DEEPEP_BRANCH=${{ steps.pins.outputs.DEEPEP_BRANCH }}
+            DEEPEP_SHA=${{ steps.pins.outputs.DEEPEP_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

@@ -48,6 +48,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Load canonical pins from pins.env
+        # Single source of truth for fork/branch/SHA pins is ./pins.env at the
+        # repo root. Wave 7d-1 OKR-1: kills SHA drift across the three
+        # consumer repos by making the builder source pins.env and pass the
+        # values via --build-arg.
+        id: pins
+        run: |
+          set -euo pipefail
+          test -f pins.env || (echo "pins.env missing at repo root" && exit 1)
+          # shellcheck disable=SC1091
+          . ./pins.env
+          echo "DEEPEP_FORK=${DEEPEP_FORK}"     >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_BRANCH=${DEEPEP_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_SHA=${DEEPEP_SHA}"       >> "$GITHUB_OUTPUT"
+
       - name: Build image (no push)
         uses: docker/build-push-action@v5
         with:
@@ -56,6 +71,10 @@ jobs:
           push: false
           load: true
           tags: deepep-v2-efa-base:test
+          build-args: |
+            DEEPEP_FORK=${{ steps.pins.outputs.DEEPEP_FORK }}
+            DEEPEP_BRANCH=${{ steps.pins.outputs.DEEPEP_BRANCH }}
+            DEEPEP_SHA=${{ steps.pins.outputs.DEEPEP_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
