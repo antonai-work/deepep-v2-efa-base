@@ -23,7 +23,7 @@ phases:
       # Wave 7d-1 OKR-1: source canonical pins from pins.env at repo root so
       # the build-args stay in sync across the three consumer repos. The
       # Dockerfile retains hardcoded ARG defaults as fallback.
-      - test -f pins.env || (echo "ERROR: pins.env missing at repo root" && exit 1)
+      - 'test -f pins.env || (echo "ERROR: pins.env missing at repo root" && exit 1)'
       - . ./pins.env
       - echo "[pins] DEEPEP_FORK=${DEEPEP_FORK}"
       - echo "[pins] DEEPEP_BRANCH=${DEEPEP_BRANCH}"
