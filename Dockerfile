@@ -259,13 +259,28 @@ RUN pip install --no-cache-dir --break-system-packages \
 #   cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,
 #                cusparse,nvjitlink,nvrtc,nvtx]==13.0.2
 # which gives us libcudart.so.13 via `cudart` and libnvrtc via `nvrtc` but
-# does NOT include the `nvcc` extra. DeepEP's `pip install -e .` build
-# step needs nvcc at compile time, so we explicitly add the nvcc + crt
-# (cu13 compiler runtime) + cccl (CUDA C++ Core Libraries headers for
-# thrust/cub) extras on top of what torch pulled.
-# The nvcc floor is 13.0.88; any 13.x bugfix is acceptable.
-RUN pip install --no-cache-dir --break-system-packages \
-      "cuda-toolkit[nvcc,crt,cccl]==13.0.2"
+# does NOT include the `nvcc` extra.
+#
+# Wave 12 empirical gotcha: `cuda-toolkit==13.0.2` -> nvcc 13.0.88 has a
+# bug where its own ptxas cannot consume the PTX 9.2 that its own nvcc
+# emits when compiling for sm_90a (verified 2026-05-06 via CodeBuild
+# attempt 1: "ptxas fatal : Unsupported .version 9.2; current version is
+# '9.0'"). cu13.2.x ships nvcc+ptxas that correctly handle PTX 9.2
+# targeting sm_90a.
+#
+# Rather than upgrade the whole cuda-toolkit metapackage (which would
+# force nvidia-cuda-runtime to 13.2.75 and conflict with torch's pin on
+# 13.0.96.*), we install only the compiler components at 13.2.78
+# directly: nvcc (the driver), nvvm (cicc + libdevice), cuda-crt (device
+# crt objects for -rdc=true), and cccl (thrust/cub headers). These all
+# land inside the shared nvidia/cu13/ prefix alongside torch's cu13.0.96
+# cudart. cudart ABI is stable across cu13.0<->cu13.2 so this mix is
+# safe for the runtime.
+RUN pip install --no-cache-dir --break-system-packages --no-deps \
+      "nvidia-cuda-nvcc>=13.2.78,<13.3" \
+      "nvidia-nvvm>=13.2.78,<13.3" \
+      "nvidia-cuda-crt>=13.2.78,<13.3" \
+      "nvidia-cuda-cccl>=13.2.75,<13.3"
 
 # Expose the cu13 runtime + nvcc that torch and cuda-toolkit just pulled in.
 # site-packages is where pip writes the nvidia-cuda-runtime wheel's
@@ -287,6 +302,11 @@ RUN set -eux; \
     test -d "${CU13_ROOT}/include"; \
     test -x "${CU13_ROOT}/bin/nvcc"; \
     test -f "${CU13_ROOT}/lib/libcudart.so.13"; \
+    test -d "${CU13_ROOT}/include/cccl"; \
+    test -d "${CU13_ROOT}/nvvm/bin"; \
+    test -x "${CU13_ROOT}/nvvm/bin/cicc"; \
+    test -d "${CU13_ROOT}/nvvm/libdevice"; \
+    test -f "${CU13_ROOT}/nvvm/libdevice/libdevice.10.bc"; \
     echo "[wave12] cu13 lib dir contents:"; \
     ls -la "${CU13_ROOT}/lib" | head -30; \
     echo "${CU13_ROOT}/lib" > /etc/ld.so.conf.d/aa-nvidia-cuda-cu13.conf; \
@@ -296,7 +316,22 @@ RUN set -eux; \
     "${CU13_ROOT}/bin/nvcc" --version; \
     "${CU13_ROOT}/bin/nvcc" --version | grep -Eq 'release 13\.' \
         || (echo "[wave12] FATAL: wheel-provided nvcc is not cu13" && exit 1); \
-    echo "[wave12] cu13 nvcc OK"; \
+    # Verify ptxas can consume the PTX emitted by its own nvcc for sm_90a
+    # (Wave 12 attempt 1 regression: 13.0.88 nvcc+ptxas disagreed on PTX
+    # 9.2 support; 13.2.78 correctly handles it). This is a compile-time
+    # sanity check to catch the regression before running the full DeepEP
+    # build.
+    printf '.version 9.2\n.target sm_90a\n.address_size 64\n.visible .entry foo() { ret; }\n' > /tmp/wave12-ptx-test.ptx; \
+    "${CU13_ROOT}/bin/ptxas" -arch=sm_90a /tmp/wave12-ptx-test.ptx -o /tmp/wave12-ptx-test.cubin 2>&1 \
+        && echo "[wave12] ptxas handles PTX 9.2 + sm_90a" \
+        || (echo "[wave12] FATAL: ptxas cannot assemble PTX 9.2 for sm_90a - upgrade cu13 nvcc" && exit 1); \
+    rm -f /tmp/wave12-ptx-test.ptx /tmp/wave12-ptx-test.cubin; \
+    # DeepEP setup.py hardcodes `/usr/local/cuda/include/cccl` so make
+    # that path resolve to the cu13 cccl headers via symlink. This is
+    # the minimum-intrusive way to avoid patching DeepEP's setup.py.
+    mkdir -p /usr/local/cuda/include; \
+    ln -sfn "${CU13_ROOT}/include/cccl" /usr/local/cuda/include/cccl; \
+    ls -la /usr/local/cuda/include/cccl; \
     echo "CU13_ROOT=${CU13_ROOT}"                 >  /etc/wave12-cuda13.env; \
     echo "PYTORCH_CUDA_NVCC_DIR=${CU13_ROOT}/bin" >> /etc/wave12-cuda13.env; \
     echo "PYTORCH_CUDA_RUNTIME_DIR=${CU13_ROOT}/lib" >> /etc/wave12-cuda13.env; \
