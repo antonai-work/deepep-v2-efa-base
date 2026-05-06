@@ -193,10 +193,18 @@ RUN set -eux; \
     ldconfig
 
 ARG NVIDIA_NCCL_PIN
+# --upgrade is required: torch==2.9.1+cu129 transitively installs
+# nvidia-nccl-cu12==2.27.5 (its own pinned dep); without --upgrade,
+# pip reports "Requirement already satisfied" and leaves 2.27.5 in
+# place. DeepEP V2's csrc/kernels/backend/nccl.cu includes
+# nccl_device/core.h which only ships in NCCL >= 2.30.
 RUN set -eux; \
     echo "[wave9] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"; \
-    pip install --no-cache-dir --break-system-packages --no-deps \
+    pip install --no-cache-dir --break-system-packages --no-deps --upgrade \
       "${NVIDIA_NCCL_PIN}"; \
+    pip show nvidia-nccl-cu12 | grep -E '^Version:' | awk '{print "[wave9] installed nvidia-nccl-cu12: " $2}'; \
+    installed_ver="$(pip show nvidia-nccl-cu12 | awk '/^Version:/ {print $2}')"; \
+    python3 -c "import sys; v=sys.argv[1]; assert tuple(map(int, v.split('.'))) >= (2,30,4), 'nccl '+v+' below 2.30.4 floor'; print('[wave9] floor OK')" "${installed_ver}"; \
     NCCL_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     echo "NCCL_LIB=${NCCL_LIB}"; \
     test -n "${NCCL_LIB}"; \
