@@ -44,16 +44,16 @@ DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-sp
 | Layer | Version | Source |
 |---|---|---|
 | Base OS | `ubuntu 24.04 noble` | `nvidia/cuda:12.9.0-devel-ubuntu24.04` |
-| CUDA | `12.9.0` | nvidia/cuda registry |
+| CUDA | `13.0.x` runtime (cu13 unified post-Wave 13) | `nvidia-cuda-runtime-cu13` + `nvidia-cuda-*-cu13` wheels |
 | EFA userspace | `1.48.0` | `efa-installer.amazonaws.com/aws-efa-installer-1.48.0.tar.gz`, `--build-ngc` path |
 | libfabric | `libfabric1-aws` (bundled with EFA 1.48.0) | EFA tarball |
-| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu12>=2.30.4` (Wave 9: cu12, not cu13) |
+| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu13>=2.30.4` (Wave 13: cu13-unified to match torch cu130 + DeepEP `_C.so`) |
 | aws-ofi-nccl | `6e504db3403931cde43a2335adcc73fbc69cccac` (2026-04-24) | `aws/aws-ofi-nccl@6e504db` |
 | GDRCopy | `v2.5.1` | `NVIDIA/gdrcopy@v2.5.1` |
-| NVSHMEM | `>= 3.3.9` | pip `nvidia-nvshmem-cu12>=3.3.9` |
-| PyTorch | cu129 wheel (cu128 fallback) | `download.pytorch.org/whl/cu129` |
+| NVSHMEM | `>= 3.6.0` | pip `nvidia-nvshmem-cu13>=3.6.0` (guarded post-torch to prevent downgrade to 3.4.5) |
+| PyTorch | `2.11.0+cu130` | `download.pytorch.org/whl/cu130` |
 | NumPy | `< 2` | pip |
-| DeepEP V2 | `c84dcac613c8df743a6487a312bbc966c745c600` | `dmvevents/DeepEP-1@aws-efa-auto-qp-cap-v2` |
+| DeepEP V2 | `146cc356aa00c39ac1590c05775e05b0f031e70c` | `dmvevents/DeepEP-1@aws-efa-auto-qp-cap-v2` |
 
 ## Consuming the image
 
@@ -93,8 +93,10 @@ examples.
 
 | Tag | Meaning |
 |---|---|
-| `v0.2.1-sm90a` | Current stable release (cu13-unified, CUDA 13.0 runtime). Targeted SM arch: `9.0a` (H100 + H200). ECR digest: `sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974` |
-| `v0.1.0-sm90a` | Prior release (cu12-based, deprecated). |
+| `v0.2.1-sm90a` | Current stable release (cu13-unified, CUDA 13.0 runtime, Wave 13 cluster-validated 2026-05-06). Targeted SM arch: `9.0a` (H100 + H200). ECR digest: `sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974`. GHCR digest: `sha256:783fab846df7416d6ba91f0015ab51622edde5c17025b8808e2e3e6a8561953b`. |
+| `v0.2.0-sm90a` | Superseded (partial cu13: NCCL flipped but torch still cu129; caused `c10::cuda::SetDevice(-64)` at MoE dispatch — see Wave 8 retrospective). |
+| `v0.1.2-sm90a` | Superseded (cu12 + bfded348 DeepEP baseline; NCCL pinned to 2.30.4). |
+| `v0.1.0-sm90a` | First public release (cu12-based). Deprecated. |
 | `v<X.Y.Z>-sm90a` | Every subsequent release bumps SemVer; `sm90a` is kept as the primary arch suffix. |
 | `sha-<short>` | Exact git SHA of the `Dockerfile` + patches that produced the image, for audit / bisect. |
 
