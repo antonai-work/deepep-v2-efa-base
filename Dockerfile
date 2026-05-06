@@ -530,9 +530,7 @@ RUN set -eux; \
       --enable-platform-aws \
       --disable-tests; \
     make -j"$(nproc)"; \
-    make install; \
-    install -D -m 0644 /tmp/p5.48xl-topo.xml /opt/aws-ofi-nccl/share/aws-ofi-nccl/xml/p5.48xl-topo.xml; \
-    install -D -m 0644 /tmp/p5.48xl-topo.xml /opt/amazon/ofi-nccl/share/aws-ofi-nccl/xml/p5.48xl-topo.xml; \
+    make install; \ \ \
     nm -D /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep -q ncclGinPlugin; \
     echo "[wave12] aws-ofi-nccl libcudart linkage:"; \
     ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep libcudart || echo "[wave12] (no libcudart linkage - plugin does not call CUDA runtime directly)"; \
