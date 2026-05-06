@@ -14,59 +14,54 @@
 # Pinned upstream sources (every line is an exact, verifiable anchor):
 #
 #   Base OS      ubuntu 24.04 noble (from nvidia/cuda:12.9.0-devel-ubuntu24.04)
-#                                            Wave 10: we wanted
-#                                            nvidia/cuda:13.0-devel-ubuntu24.04
-#                                            but it is not yet on Docker Hub
-#                                            (verified 2026-05-06). The cu13
-#                                            runtime components land via pip
-#                                            wheels on top of the cu12.9 devel
-#                                            build-OS. Flip this to 13.0-devel
-#                                            when NVIDIA publishes it.
-#   CUDA         12.9.0                      NVIDIA registry. Provides nvcc
-#                                            (build-time) + libcudart.so.12
-#                                            (runtime). Wave 10 retry 1:
-#                                            torch is cu129 (libcudart.so.12
-#                                            compatible) and NCCL is cu13
-#                                            (dlopens CUDA runtime so no
-#                                            static libcudart.so.13 dep).
-#                                            True cu13 runtime unification
-#                                            is blocked on NVIDIA publishing
-#                                            cu13 devtoolkit wheels.
+#                                            Wave 12: per the plan guidance
+#                                            we keep the BUILD OS on cu12.9
+#                                            even though nvidia/cuda:13.0.0-
+#                                            devel-ubuntu24.04 now exists on
+#                                            Docker Hub. cu13 RUNTIME libs
+#                                            (libcudart.so.13, nvcc 13) land
+#                                            via the pip wheel chain:
+#                                            torch==2.11.0+cu130 Requires-Dist
+#                                            pulls `cuda-toolkit==13.0.2`
+#                                            which brings
+#                                            nvidia-cuda-runtime==13.0.96 and
+#                                            nvidia-cuda-nvcc==13.0.88. The
+#                                            Wave 10 comment that "cu13 nvcc
+#                                            is blocked" was based on probing
+#                                            the legacy `nvidia-cuda-nvcc-cu13`
+#                                            package (0.0.1 placeholder); the
+#                                            real cu13 nvcc now ships via the
+#                                            unified `cuda-toolkit` meta and
+#                                            this block installs it correctly.
+#   CUDA         12.9.0 (build OS) +         Base image provides the cu12.9
+#                13.0 (runtime via pip)      compile toolchain that is kept
+#                                            only as a fallback. cu13
+#                                            nvcc/libcudart flow in through
+#                                            pip's site-packages and are made
+#                                            visible via PATH and
+#                                            LD_LIBRARY_PATH before the
+#                                            DeepEP build step so torch's
+#                                            cpp_extension major-version
+#                                            check passes (torch.version.cuda
+#                                            == '13.0' matches the nvcc 13
+#                                            from the wheel).
 #   EFA user     1.48.0                      efa-installer.amazonaws.com tarball
 #                                            installed via --build-ngc path
 #                                            (libfabric1-aws + libnccl-ofi-ngc-v3)
 #   NCCL         2.30.4                      pip wheel `nvidia-nccl-cu13>=2.30.4`
-#                                            (Wave 10: NCCL wheel flipped back
-#                                            to cu13 because cu12 NCCL 2.30.4
-#                                            exposes `ncclTeamWorld` (weak
-#                                            symbol, verified via `nm -D` on
-#                                            the cu12 wheel 2026-05-06) BUT
-#                                            does NOT export
-#                                            `ncclCommProperties`, which
-#                                            DeepEP V2 PR #612's
-#                                            csrc/kernels/backend/nccl.cu
-#                                            calls. cu13 NCCL exposes both
-#                                            symbols. Wave 9c's
-#                                            `ImportError: undefined symbol:
-#                                            ncclTeamWorld` was a secondary
-#                                            artefact of the same GIN ABI
-#                                            gap. The wheel is installed
-#                                            under torch cu129; Python-level
-#                                            ldconfig resolution gives
-#                                            libnccl.so.2 -> cu13 wheel, and
-#                                            DeepEP's link-time `-l:libnccl.so`
-#                                            resolves to the cu13 NCCL. torch
-#                                            itself never dlopens libnccl
-#                                            directly - torch.distributed.
-#                                            ProcessGroupNCCL.init_process
-#                                            dlopens whatever libnccl.so.2
-#                                            ld.so resolves, so the cu13 NCCL
-#                                            carries for torch's NCCL work
-#                                            too. Runtime libcudart is cu12
-#                                            (from the base image and torch
-#                                            cu129 wheel); NCCL's internal
-#                                            libcudart.so.13 references are
-#                                            resolved through weak linkage.)
+#                                            (Wave 10: NCCL flipped to cu13
+#                                            for the DeepEP V2 GIN ABI
+#                                            symbols: ncclTeamWorld,
+#                                            ncclCommQueryProperties,
+#                                            ncclGinBarrierCreateRequirement.
+#                                            Wave 12: torch now also cu13 so
+#                                            every runtime component links
+#                                            libcudart.so.13 uniformly - no
+#                                            more TLS split across the
+#                                            torch/vllm._C/deep_ep boundary
+#                                            which was the root cause of
+#                                            Wave 11's c10::cuda::SetDevice
+#                                            -112 crash at MoE dispatch.)
 #                                            apt libnccl2 2.26.x is purged
 #   aws-ofi-nccl 6e504db3403931cde43a2335adcc73fbc69cccac (2026-04-24)
 #                                            github.com/aws/aws-ofi-nccl
@@ -78,15 +73,21 @@
 #                                            --enable-platform-aws against the
 #                                            NCCL 2.30.4 pip wheel headers.
 #   GDRCopy      v2.5.1                      github.com/NVIDIA/gdrcopy
-#   NVSHMEM      nvidia-nvshmem-cu12>=3.3.9  pip wheel. Only libnvshmem_host.so
+#   NVSHMEM      nvidia-nvshmem-cu13>=3.4.5  pip wheel. Only libnvshmem_host.so
 #                                            is linked at DeepEP build time;
 #                                            runtime does not call NVSHMEM
 #                                            when DEEP_EP_BACKEND=nccl.
-#                                            Wave 10 retry 1: kept on cu12 to
-#                                            match torch cu129's libcudart.so.12
-#                                            so the DeepEP `_C.so` is not forced
-#                                            to load libcudart.so.13 at import
-#                                            time. Only NCCL flips to cu13.
+#                                            Wave 12: flipped to cu13 to match
+#                                            torch cu130's libcudart.so.13
+#                                            now that torch is on cu130.
+#                                            Keeping cu12 NVSHMEM here would
+#                                            reintroduce the libcudart TLS
+#                                            split that Wave 12 is explicitly
+#                                            closing (torch cu130 brings
+#                                            libcudart.so.13 so NVSHMEM must
+#                                            link it too). The cu13 wheel
+#                                            torch drags in is 3.4.5 per
+#                                            torch 2.11.0+cu130 metadata.
 #   DeepEP       146cc356aa00c39ac1590c05775e05b0f031e70c
 #                on branch aws-efa-auto-qp-cap-v2 of
 #                github.com/dmvevents/DeepEP-1 (fork of deepseek-ai/DeepEP@main
@@ -99,19 +100,22 @@
 #                commits as reviewable .patch files; see docs/ARCHITECTURE.md
 #                for why we clone the pre-patched branch rather than apply
 #                them sequentially at image build time.
-#   PyTorch      torch==2.11.0+cu129 from
-#                https://download.pytorch.org/whl/cu129 (Wave 10 retry 1).
-#                Previously torch==2.9.1+cu129 (Wave 9 cu12 stack). Wave 10
-#                originally targeted torch==2.11.0+cu130 but NVIDIA has not
-#                yet published cu13 developer toolkit wheels (nvidia-cuda-
-#                nvcc-cu13 == 0.0.1 placeholder as of 2026-05-06), and
-#                Docker Hub does not yet ship nvidia/cuda:13.0-devel-
-#                ubuntu24.04 either. Without a cu13 nvcc, torch
-#                cpp_extension's `cuda_ver.major != torch_cuda_version.major`
-#                check hard-fails DeepEP's `pip install -e .`.
-#                Staying on cu129 torch aligns with the base image nvcc and
-#                lets DeepEP build; the NCCL wheel separately flips to cu13
-#                (see NCCL entry) to get the GIN ABI symbols DeepEP needs.
+#   PyTorch      torch==2.11.0+cu130 from
+#                https://download.pytorch.org/whl/cu130 (Wave 12).
+#                Wave 12 closes Wave 10's partial cu13 migration: the torch
+#                cu130 wheel brings the full cu13 runtime chain through its
+#                Requires-Dist (`cuda-toolkit==13.0.2` -> nvidia-cuda-runtime
+#                ==13.0.96 + nvidia-cuda-nvcc==13.0.88) so the Wave 10 concern
+#                about missing cu13 nvcc wheels no longer applies (the legacy
+#                `nvidia-cuda-nvcc-cu13` is still a 0.0.1 placeholder, but the
+#                new unified `nvidia-cuda-nvcc` package is what torch 2.11
+#                installs). DeepEP's `pip install -e .` succeeds because
+#                torch.cpp_extension finds the wheel-provided nvcc and
+#                torch.version.cuda == '13.0' matches.
+#                An `==` pin is required here because DeepEP V2's `_C.so` is
+#                built against a specific torch C++ ABI; a silent bump on the
+#                cu130 index would break JIT loads across every consumer
+#                overlay.
 #   NumPy        <2 (torch.distributed.all_gather_object compat with the
 #                DeepEP V2 NCCL comm handle exchange)
 #
@@ -135,19 +139,18 @@ FROM nvidia/cuda:12.9.0-devel-ubuntu24.04
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Wave 10 retry 1: partial cu13 migration. NCCL pin sourced from pins.env
-# at repo root; CI passes this via --build-arg. Default fallback so
-# `docker build .` works standalone. RATIONALE: the god-mode consensus
-# recommended a full cu13 stack. cu13 NCCL is achievable today via the
-# published nvidia-nccl-cu13 wheel. cu13 torch + cu13 nvcc are not: torch
-# cu130 wheels exist but NVIDIA has not published cu13 devtoolkit wheels
-# (nvidia-cuda-nvcc-cu13 is a 0.0.1 placeholder), so DeepEP's
-# CUDAExtension build fails torch's cpp_extension major-version check.
-# This commit keeps torch on cu129 (matching the cu12.9-devel base nvcc)
-# and flips only NCCL to cu13 to get GIN ABI under a fully-buildable
-# toolchain.
+# Wave 12: complete cu13 migration. NCCL pin + torch index sourced from
+# pins.env at repo root; CI passes both via --build-arg. Default fallbacks
+# below let `docker build .` work standalone. Wave 10 flipped NCCL to cu13
+# but left torch on cu129; Wave 11 proved the resulting libcudart TLS
+# split still crashes vllm._C at MoE dispatch with
+# c10::cuda::SetDevice(-112). Wave 12 flips torch to cu130 so the whole
+# stack links libcudart.so.13 uniformly. cu13 nvcc now ships via the
+# unified `cuda-toolkit==13.0.2` meta package that torch 2.11.0+cu130
+# Requires-Dist pulls in (not the legacy nvidia-cuda-nvcc-cu13 placeholder
+# Wave 10 probed), so DeepEP's `pip install -e .` builds cleanly.
 ARG NVIDIA_NCCL_PIN=nvidia-nccl-cu13>=2.30.4
-ARG TORCH_INDEX=https://download.pytorch.org/whl/cu129
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu130
 
 # -----------------------------------------------------------------------------
 # System deps + EFA userspace + aws-ofi-nccl (NGC-aware install path)
@@ -210,10 +213,18 @@ RUN set -eux; \
     ldconfig; \
     rm -rf /var/build-scratch/efa
 
+# Wave 12: CUDA_HOME and LD_LIBRARY_PATH are set here as a fallback only;
+# the DeepEP build step later re-points CUDA_HOME to the pip-installed cu13
+# toolchain for the duration of that RUN. Runtime cu13 libcudart resolution
+# comes from ldconfig (see /etc/ld.so.conf.d/aa-nvidia-cuda-runtime-cu13.conf
+# written later), so LD_LIBRARY_PATH here intentionally does NOT include
+# /usr/local/cuda/lib64 first - that would shadow the cu13 libcudart with
+# the base image's cu12 libcudart. We keep /usr/local/cuda/lib64 at the
+# end of LD_LIBRARY_PATH for stubs/build-time linkage only.
 ENV CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:/opt/amazon/efa/bin:${PATH} \
     PKG_CONFIG_PATH=/opt/amazon/efa/lib/pkgconfig:/opt/amazon/efa/lib64/pkgconfig \
-    LD_LIBRARY_PATH=/opt/amazon/efa/lib:/opt/amazon/efa/lib64:/opt/amazon/ofi-nccl/lib:/usr/local/cuda/lib64
+    LD_LIBRARY_PATH=/opt/amazon/efa/lib:/opt/amazon/efa/lib64:/opt/amazon/ofi-nccl/lib
 
 # -----------------------------------------------------------------------------
 # GDRCopy v2.5.1 userspace (kernel module lives on the host)
@@ -227,22 +238,71 @@ RUN set -eux; \
     rm -rf /var/build-scratch/gdrcopy
 
 # -----------------------------------------------------------------------------
-# PyTorch + NCCL 2.30.4 via pip (DeepEP V2 upstream README recommends this
-# over building NCCL from source, so the JIT can find headers automatically)
+# PyTorch + cu13 runtime chain via pip (Wave 12).
 #
-# Wave 10 retry 1: pinned to torch==2.11.0+cu129 (latest cu129 wheel on
-# https://download.pytorch.org/whl/cu129/torch/, verified 2026-05-06 via
-# `pip index versions torch`). cu130 was the initial Wave 10 target but
-# NVIDIA has not published cu13 developer-toolkit wheels yet, and the
-# torch cpp_extension major-version check hard-fails DeepEP's
-# `pip install -e .` when torch is cu130 but nvcc is 12.9.
+# torch==2.11.0+cu130 from https://download.pytorch.org/whl/cu130 is the
+# first cu130 stable wheel. Its Requires-Dist pulls cuda-toolkit==13.0.2
+# which in turn pulls nvidia-cuda-runtime==13.0.96 (libcudart.so.13) and
+# nvidia-cuda-nvcc==13.0.88 (nvcc 13). DeepEP's `pip install -e .` then
+# uses the wheel-provided nvcc; torch.cpp_extension's `torch.version.cuda`
+# is '13.0' and the nvcc major matches, so the major-version check passes.
+#
 # An `==` pin is required here because DeepEP V2's `_C.so` is built
-# against a specific torch C++ ABI; a silent bump on the cu129 index
+# against a specific torch C++ ABI; a silent bump on the cu130 index
 # would break JIT loads across every consumer overlay.
 # -----------------------------------------------------------------------------
 ARG TORCH_INDEX
 RUN pip install --no-cache-dir --break-system-packages \
       "torch==2.11.0" --index-url "${TORCH_INDEX}"
+
+# torch 2.11.0+cu130's Requires-Dist pulls
+#   cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,
+#                cusparse,nvjitlink,nvrtc,nvtx]==13.0.2
+# which gives us libcudart.so.13 via `cudart` and libnvrtc via `nvrtc` but
+# does NOT include the `nvcc` extra. DeepEP's `pip install -e .` build
+# step needs nvcc at compile time, so we explicitly add the nvcc + crt
+# (cu13 compiler runtime) + cccl (CUDA C++ Core Libraries headers for
+# thrust/cub) extras on top of what torch pulled.
+# The nvcc floor is 13.0.88; any 13.x bugfix is acceptable.
+RUN pip install --no-cache-dir --break-system-packages \
+      "cuda-toolkit[nvcc,crt,cccl]==13.0.2"
+
+# Expose the cu13 runtime + nvcc that torch and cuda-toolkit just pulled in.
+# site-packages is where pip writes the nvidia-cuda-runtime wheel's
+# libcudart.so.13 and the nvidia-cuda-nvcc wheel's nvcc binary. Put them on
+# LD_LIBRARY_PATH/PATH and
+# register libcudart's dir with ldconfig so downstream compiled .so files
+# (DeepEP's _C.so, aws-ofi-nccl's libnccl-net-ofi.so) resolve them at
+# link time AND at runtime. This is the key Wave 12 mechanism: without this
+# step, /usr/local/cuda/bin/nvcc (cu12.9) shadows the cu13 nvcc and
+# torch.cpp_extension's major-version check fails with
+# "detected CUDA version (12.9) mismatches version used to compile PyTorch
+# (13.0)" when DeepEP builds.
+RUN set -eux; \
+    CU13_ROOT="$(find /usr/local/lib /usr/lib -type d -path '*/nvidia/cu13' 2>/dev/null | head -1)"; \
+    echo "[wave12] cu13 root: ${CU13_ROOT}"; \
+    test -n "${CU13_ROOT}" && test -d "${CU13_ROOT}"; \
+    test -d "${CU13_ROOT}/lib"; \
+    test -d "${CU13_ROOT}/bin"; \
+    test -d "${CU13_ROOT}/include"; \
+    test -x "${CU13_ROOT}/bin/nvcc"; \
+    test -f "${CU13_ROOT}/lib/libcudart.so.13"; \
+    echo "[wave12] cu13 lib dir contents:"; \
+    ls -la "${CU13_ROOT}/lib" | head -30; \
+    echo "${CU13_ROOT}/lib" > /etc/ld.so.conf.d/aa-nvidia-cuda-cu13.conf; \
+    ldconfig; \
+    echo "[wave12] ldconfig libcudart entries:"; \
+    ldconfig -p | grep -E 'libcudart\.so' | head -5; \
+    "${CU13_ROOT}/bin/nvcc" --version; \
+    "${CU13_ROOT}/bin/nvcc" --version | grep -Eq 'release 13\.' \
+        || (echo "[wave12] FATAL: wheel-provided nvcc is not cu13" && exit 1); \
+    echo "[wave12] cu13 nvcc OK"; \
+    echo "CU13_ROOT=${CU13_ROOT}"                 >  /etc/wave12-cuda13.env; \
+    echo "PYTORCH_CUDA_NVCC_DIR=${CU13_ROOT}/bin" >> /etc/wave12-cuda13.env; \
+    echo "PYTORCH_CUDA_RUNTIME_DIR=${CU13_ROOT}/lib" >> /etc/wave12-cuda13.env; \
+    echo "PYTORCH_CUDA_ROOT=${CU13_ROOT}"         >> /etc/wave12-cuda13.env; \
+    echo "PYTORCH_CUDART_ROOT=${CU13_ROOT}"       >> /etc/wave12-cuda13.env; \
+    cat /etc/wave12-cuda13.env
 
 # numpy<2 is required at runtime by torch.distributed.all_gather_object
 # (DeepEP V2's ElasticBuffer.__init__ calls it from get_nccl_comm_handle).
@@ -260,36 +320,35 @@ RUN set -eux; \
     ldconfig
 
 ARG NVIDIA_NCCL_PIN
-# --upgrade is required: torch==2.11.0+cu129 transitively installs
-# nvidia-nccl-cu12 at a version pinned inside the torch wheel (which may
-# be lower than 2.30.4); without --upgrade, pip reports "Requirement
-# already satisfied" and leaves the torch-bundled NCCL in place. DeepEP
-# V2's csrc/kernels/backend/nccl.cu calls `ncclTeamWorld`,
+# --upgrade is required: torch==2.11.0+cu130 transitively installs
+# nvidia-nccl-cu13 at a version pinned inside the torch wheel (2.28.9
+# per the torch 2.11.0+cu130 METADATA); without --upgrade, pip reports
+# "Requirement already satisfied" and leaves the torch-bundled NCCL in
+# place. DeepEP V2's csrc/kernels/backend/nccl.cu calls `ncclTeamWorld`,
 # `ncclCommQueryProperties`, and `ncclGinBarrierCreateRequirement` which
 # only ship in NCCL >= 2.30.4.
 #
-# When NVIDIA_NCCL_PIN flips to cu13 (Wave 10 retry 1 default), we must
-# also uninstall the torch-bundled nvidia-nccl-cu12 first so only one
-# `site-packages/nvidia/nccl/` directory exists. Both wheels land at the
-# same path; the later install wins, but uninstall-first is clearer and
-# avoids any partial-overlap issues.
+# Wave 12: torch cu130 already brings nvidia-nccl-cu13 transitively, so
+# we only need to force-upgrade the existing cu13 wheel to >=2.30.4.
+# The cu12/cu13 flip logic from Wave 10 is retained as defence in depth
+# for a future flip back.
 #
 # Version detection is made cu12/cu13-agnostic: extract the wheel name
 # from the NVIDIA_NCCL_PIN build arg so the same block works across
 # cu12/cu13 flips without hardcoding `pip show nvidia-nccl-cuNN`.
 RUN set -eux; \
-    echo "[wave10] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"; \
+    echo "[wave12] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"; \
     pkg_name="$(echo "${NVIDIA_NCCL_PIN}" | sed -e 's/[<>=!].*//' -e 's/[[:space:]]*//g')"; \
     if [ "${pkg_name}" = "nvidia-nccl-cu13" ]; then \
-      echo "[wave10] flipping to cu13 NCCL - uninstalling torch-bundled cu12 NCCL first"; \
+      echo "[wave12] flipping to cu13 NCCL - uninstalling any stray cu12 NCCL first"; \
       pip uninstall -y --break-system-packages nvidia-nccl-cu12 2>/dev/null || true; \
     fi; \
     pip install --no-cache-dir --break-system-packages --no-deps --upgrade \
       "${NVIDIA_NCCL_PIN}"; \
-    echo "[wave10] nccl pip pkg: ${pkg_name}"; \
-    pip show "${pkg_name}" | grep -E '^Version:' | awk '{print "[wave10] installed '"${pkg_name}"': " $2}'; \
+    echo "[wave12] nccl pip pkg: ${pkg_name}"; \
+    pip show "${pkg_name}" | grep -E '^Version:' | awk '{print "[wave12] installed '"${pkg_name}"': " $2}'; \
     installed_ver="$(pip show "${pkg_name}" | awk '/^Version:/ {print $2}')"; \
-    python3 -c "import sys; v=sys.argv[1]; assert tuple(map(int, v.split('.'))) >= (2,30,4), 'nccl '+v+' below 2.30.4 floor'; print('[wave10] floor OK')" "${installed_ver}"; \
+    python3 -c "import sys; v=sys.argv[1]; assert tuple(map(int, v.split('.'))) >= (2,30,4), 'nccl '+v+' below 2.30.4 floor'; print('[wave12] floor OK')" "${installed_ver}"; \
     NCCL_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     echo "NCCL_LIB=${NCCL_LIB}"; \
     test -n "${NCCL_LIB}"; \
@@ -302,33 +361,54 @@ RUN set -eux; \
     echo "${NCCL_LIB}" > /etc/ld.so.conf.d/aa-nvidia-nccl.conf; \
     ldconfig; \
     ldconfig -p | grep 'libnccl.so' | head -3; \
-    echo "[wave10] probing GIN ABI symbols in the installed NCCL wheel..."; \
+    echo "[wave12] probing GIN ABI symbols in the installed NCCL wheel..."; \
     gin_syms="$(nm -D --defined-only "${SO2}" 2>/dev/null | grep -Eo 'ncclTeamWorld|ncclCommQueryProperties|ncclGinBarrierCreateRequirement' | sort -u || true)"; \
-    echo "[wave10] GIN symbols found: ${gin_syms:-NONE}"; \
+    echo "[wave12] GIN symbols found: ${gin_syms:-NONE}"; \
     for sym in ncclTeamWorld ncclCommQueryProperties ncclGinBarrierCreateRequirement; do \
       echo "${gin_syms}" | grep -q "${sym}" \
-        || (echo "[wave10] FATAL: NCCL wheel missing GIN ABI symbol ${sym} (Wave 9c signature)" && exit 1); \
+        || (echo "[wave12] FATAL: NCCL wheel missing GIN ABI symbol ${sym} (Wave 9c signature)" && exit 1); \
     done; \
-    echo "[wave10] GIN ABI OK (all 3 required symbols present)"
+    echo "[wave12] GIN ABI OK (all 3 required symbols present)"; \
+    echo "[wave12] NCCL libcudart linkage:"; \
+    ldd "${SO2}" | grep -E 'libcudart\.so' \
+      || echo "[wave12] (NCCL does not dlopen libcudart directly)"; \
+    if ldd "${SO2}" | grep -qE 'libcudart\.so\.12'; then \
+      echo "[wave12] FATAL: NCCL wheel still links libcudart.so.12 - expected libcudart.so.13"; \
+      exit 1; \
+    fi
 
 # NVSHMEM pip wheel for the legacy link path. DeepEP V2's setup.py still links
 # against libnvshmem_host.so even when the primary runtime is NCCL Gin
 # (upstream setup.py has a TODO: "make NVSHMEM and legacy optional").
-# Required >=3.3.9 per DeepEP docs/nvshmem.md on the V2 branch. Wave 10
-# retry 1 keeps NVSHMEM on cu12 (not cu13) to match torch cu129's
-# libcudart.so.12 so DeepEP's `_C.so` is not forced to load
-# libcudart.so.13 at import time. Only NCCL flips to cu13. The wheel
-# only ships libnvshmem_host.so.X (versioned), but DeepEP's link line
+# Required >=3.3.9 per DeepEP docs/nvshmem.md on the V2 branch. Wave 12
+# flips NVSHMEM to cu13 to match torch cu130's libcudart.so.13. Leaving
+# NVSHMEM on cu12 would reintroduce the libcudart TLS split that Wave 12
+# is explicitly closing. The cu13 wheel torch pulls transitively is
+# 3.4.5 per torch 2.11.0+cu130 METADATA; our explicit install ensures
+# the floor is enforced. Uninstall any cu12 stray first (defence in depth
+# in case a downstream overlay or prior layer left one behind). The
+# wheel ships libnvshmem_host.so.X (versioned), but DeepEP's link line
 # uses `-l:libnvshmem_host.so` (unversioned). Create the symlink.
-RUN pip install --no-cache-dir --break-system-packages \
-      "nvidia-nvshmem-cu12==3.3.9" \
- && NVSHMEM_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nvshmem/lib' -type d 2>/dev/null | head -1)" \
- && test -n "${NVSHMEM_LIB}" && test -d "${NVSHMEM_LIB}" \
- && ls "${NVSHMEM_LIB}" \
- && HOST_SO="$(ls "${NVSHMEM_LIB}"/libnvshmem_host.so.* | head -1)" \
- && ln -sf "${HOST_SO}" "${NVSHMEM_LIB}/libnvshmem_host.so" \
- && echo "${NVSHMEM_LIB}" > /etc/ld.so.conf.d/zz-nvshmem.conf \
- && ldconfig
+RUN set -eux; \
+    echo "[wave12] NVSHMEM flip to cu13 - uninstall any cu12 NVSHMEM first"; \
+    pip uninstall -y --break-system-packages nvidia-nvshmem-cu12 2>/dev/null || true; \
+    pip install --no-cache-dir --break-system-packages --upgrade --no-deps \
+      "nvidia-nvshmem-cu13>=3.4.5"; \
+    NVSHMEM_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nvshmem/lib' -type d 2>/dev/null | head -1)"; \
+    test -n "${NVSHMEM_LIB}" && test -d "${NVSHMEM_LIB}"; \
+    ls "${NVSHMEM_LIB}"; \
+    HOST_SO="$(ls "${NVSHMEM_LIB}"/libnvshmem_host.so.* | head -1)"; \
+    ln -sf "${HOST_SO}" "${NVSHMEM_LIB}/libnvshmem_host.so"; \
+    echo "${NVSHMEM_LIB}" > /etc/ld.so.conf.d/zz-nvshmem.conf; \
+    ldconfig; \
+    echo "[wave12] NVSHMEM libcudart linkage:"; \
+    ldd "${HOST_SO}" | grep -E 'libcudart\.so' \
+      || echo "[wave12] (no direct libcudart linkage)"; \
+    if ldd "${HOST_SO}" | grep -qE 'libcudart\.so\.12'; then \
+      echo "[wave12] FATAL: NVSHMEM wheel still links libcudart.so.12 - expected libcudart.so.13"; \
+      exit 1; \
+    fi; \
+    echo "[wave12] NVSHMEM cu13 OK"
 
 # -----------------------------------------------------------------------------
 # aws-ofi-nccl built from master, pinned to commit 6e504db3403931cde (2026-04-24):
@@ -359,6 +439,8 @@ RUN pip install --no-cache-dir --break-system-packages \
 # -----------------------------------------------------------------------------
 ARG AWS_OFI_NCCL_SHA=6e504db3403931cde43a2335adcc73fbc69cccac
 RUN set -eux; \
+    source /etc/wave12-cuda13.env; \
+    test -n "${CU13_ROOT}"; \
     git clone https://github.com/aws/aws-ofi-nccl.git /var/build-scratch/aws-ofi-nccl; \
     cd /var/build-scratch/aws-ofi-nccl; \
     git checkout "${AWS_OFI_NCCL_SHA}"; \
@@ -367,20 +449,28 @@ RUN set -eux; \
     NCCL_LIB_DIR_OFI="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     test -n "${NCCL_INCLUDE_DIR}" && test -n "${NCCL_LIB_DIR_OFI}"; \
     NCCL_ROOT="$(dirname "${NCCL_INCLUDE_DIR}")"; \
-    CPPFLAGS="-I/opt/amazon/efa/include -I/opt/amazon/efa/include/rdma -I/usr/local/cuda/include -I${NCCL_INCLUDE_DIR}" \
-    LDFLAGS="-L/opt/amazon/efa/lib -L/opt/amazon/efa/lib64 -L/usr/local/cuda/lib64 -L/usr/local/cuda/lib64/stubs -L${NCCL_LIB_DIR_OFI}" \
+    # Wave 12: point at cu13 toolchain for headers/libs so any libcudart
+    # linkage that slips in ends up linking libcudart.so.13 (and not the
+    # cu12.9 from /usr/local/cuda). The plugin normally has no direct
+    # libcudart dep but being explicit costs nothing.
+    CPPFLAGS="-I/opt/amazon/efa/include -I/opt/amazon/efa/include/rdma -I${CU13_ROOT}/include -I${NCCL_INCLUDE_DIR}" \
+    LDFLAGS="-L/opt/amazon/efa/lib -L/opt/amazon/efa/lib64 -L${CU13_ROOT}/lib -L${CU13_ROOT}/lib/stubs -L${NCCL_LIB_DIR_OFI}" \
     ./configure \
       --prefix=/opt/aws-ofi-nccl \
       --with-libfabric=/opt/amazon/efa \
-      --with-cuda=/usr/local/cuda \
+      --with-cuda="${CU13_ROOT}" \
       --with-nccl="${NCCL_ROOT}" \
       --enable-platform-aws \
       --disable-tests; \
     make -j"$(nproc)"; \
     make install; \
     nm -D /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep -q ncclGinPlugin; \
-    echo "[wave10] aws-ofi-nccl libcudart linkage:"; \
-    ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep libcudart || echo "[wave10] (no libcudart linkage - plugin does not call CUDA runtime directly)"; \
+    echo "[wave12] aws-ofi-nccl libcudart linkage:"; \
+    ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep libcudart || echo "[wave12] (no libcudart linkage - plugin does not call CUDA runtime directly)"; \
+    if ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep -qE 'libcudart\.so\.12'; then \
+      echo "[wave12] FATAL: aws-ofi-nccl plugin still links libcudart.so.12 - expected libcudart.so.13 or none"; \
+      exit 1; \
+    fi; \
     echo /opt/aws-ofi-nccl/lib > /etc/ld.so.conf.d/zz-aws-ofi-nccl.conf; \
     ldconfig; \
     rm -rf /var/build-scratch/aws-ofi-nccl
@@ -417,13 +507,54 @@ RUN set -eux; \
       || (echo "FATAL: DeepEP HEAD $(git rev-parse HEAD) != pinned ${DEEPEP_SHA}" && exit 1); \
     export TORCH_CUDA_ARCH_LIST="9.0"; \
     export MAX_JOBS="$(nproc)"; \
+    # Wave 12: route DeepEP's build through the pip-installed cu13 nvcc so
+    # torch.cpp_extension's cuda-major check passes. torch.version.cuda ==
+    # '13.0' for torch==2.11.0+cu130; the wheel-provided nvcc is cu13.0.88
+    # which matches. CUDA_HOME is re-pointed to nvidia/cu13/ (the wheel's
+    # unified `bin`/`lib`/`include` root) so the torch.cpp_extension probe
+    # finds a cu13 nvcc instead of /usr/local/cuda/bin/nvcc (cu12.9).
+    source /etc/wave12-cuda13.env; \
+    test -n "${CU13_ROOT}"; \
+    echo "[wave12] deepep build using CU13_ROOT=${CU13_ROOT}"; \
+    export CUDA_HOME="${CU13_ROOT}"; \
+    export PATH="${CU13_ROOT}/bin:${PATH}"; \
+    export LD_LIBRARY_PATH="${CU13_ROOT}/lib:${LD_LIBRARY_PATH:-}"; \
+    export CPATH="${CU13_ROOT}/include:${CPATH:-}"; \
     # DeepEP V2 setup.py adds -Wl,-rpath for nccl but not a matching -L, so the
     # linker cannot resolve `-l:libnccl.so`. Inject the path via LIBRARY_PATH.
     NCCL_LIB_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     test -n "${NCCL_LIB_DIR}"; \
-    export LIBRARY_PATH="${NCCL_LIB_DIR}:${LIBRARY_PATH:-}"; \
+    export LIBRARY_PATH="${NCCL_LIB_DIR}:${CU13_ROOT}/lib:${LIBRARY_PATH:-}"; \
+    which nvcc && nvcc --version | tail -1; \
+    python3 -c "import torch; print('[wave12] torch.version.cuda=', torch.version.cuda, 'torch.__version__=', torch.__version__)"; \
     pip3 install --no-build-isolation --break-system-packages -e .; \
-    python3 -c "import deep_ep; print('DeepEP V2 OK:', deep_ep.ElasticBuffer)"
+    python3 -c "import deep_ep; print('DeepEP V2 OK:', deep_ep.ElasticBuffer)"; \
+    echo "[wave12] DeepEP _C.so libcudart linkage:"; \
+    DEEPEP_CSO="$(find /opt/DeepEP -name '_C*.so' 2>/dev/null | head -1)"; \
+    echo "[wave12] DEEPEP_CSO=${DEEPEP_CSO}"; \
+    if [ -n "${DEEPEP_CSO}" ]; then \
+      ldd "${DEEPEP_CSO}" | grep -E 'libcudart\.so' || echo "[wave12] (deepep _C.so does not link libcudart directly)"; \
+      if ldd "${DEEPEP_CSO}" | grep -qE 'libcudart\.so\.12'; then \
+        echo "[wave12] FATAL: deepep _C.so still links libcudart.so.12 - expected libcudart.so.13"; \
+        exit 1; \
+      fi; \
+    fi
+
+# -----------------------------------------------------------------------------
+# Wave 12: runtime LD_LIBRARY_PATH convenience for the cu13 wheel-provided
+# libs. ldconfig already registers the wheel's lib dirs via
+# /etc/ld.so.conf.d/aa-nvidia-cuda-runtime-cu13.conf, so dynamic resolution
+# works at runtime without LD_LIBRARY_PATH. This env var is included only
+# for overlays that shell out to binaries ignoring ldconfig (e.g. CI tools
+# that set their own LD_LIBRARY_PATH without a base).
+# -----------------------------------------------------------------------------
+RUN set -eux; \
+    source /etc/wave12-cuda13.env; \
+    NCCL_LIB_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
+    NVSHMEM_LIB_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nvshmem/lib' -type d 2>/dev/null | head -1)"; \
+    echo "NCCL_LIB_DIR=${NCCL_LIB_DIR}" >> /etc/wave12-cuda13.env; \
+    echo "NVSHMEM_LIB_DIR=${NVSHMEM_LIB_DIR}" >> /etc/wave12-cuda13.env; \
+    cat /etc/wave12-cuda13.env
 
 # -----------------------------------------------------------------------------
 # Preflight harness + runtime env
@@ -462,4 +593,7 @@ LABEL org.opencontainers.image.title="deepep-v2-efa-base" \
       deepep.branch="aws-efa-auto-qp-cap-v2" \
       deepep.sha="146cc356aa00c39ac1590c05775e05b0f031e70c" \
       aws-ofi-nccl.sha="6e504db3403931cde43a2335adcc73fbc69cccac" \
-      efa.installer="1.48.0"
+      efa.installer="1.48.0" \
+      wave.version="12" \
+      cuda.runtime="13.0" \
+      torch.version="2.11.0+cu130"

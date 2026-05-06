@@ -9,7 +9,7 @@ version: 0.2
 env:
   variables:
     ECR_REPO: "deepep-v2-efa-base"
-    BASE_VERSION_TAG: "v0.2.0-sm90a"
+    BASE_VERSION_TAG: "v0.2.1-sm90a"
 
 phases:
   pre_build:
