@@ -530,7 +530,7 @@ RUN set -eux; \
       --enable-platform-aws \
       --disable-tests; \
     make -j"$(nproc)"; \
-    make install; \ \ \
+    make install; \
     nm -D /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep -q ncclGinPlugin; \
     echo "[wave12] aws-ofi-nccl libcudart linkage:"; \
     ldd /opt/aws-ofi-nccl/lib/libnccl-net-ofi.so | grep libcudart || echo "[wave12] (no libcudart linkage - plugin does not call CUDA runtime directly)"; \
