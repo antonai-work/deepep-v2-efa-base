@@ -340,6 +340,24 @@ RUN set -eux; \
     mkdir -p /usr/local/cuda/include; \
     ln -sfn "${CU13_ROOT}/include/cccl" /usr/local/cuda/include/cccl; \
     ls -la /usr/local/cuda/include/cccl; \
+    # Wave 12: the cu13 runtime wheel ships libcudart.so.13 without an
+    # unversioned libcudart.so symlink. ld at link time needs
+    # `libcudart.so` for `-lcudart`. Create the symlink so DeepEP's
+    # final link step resolves. Ditto for libcudadevrt and libcuda stubs
+    # if present.
+    for versioned in "${CU13_ROOT}/lib"/libcudart.so.*; do \
+      [ -f "${versioned}" ] || continue; \
+      ln -sfn "$(basename "${versioned}")" "${CU13_ROOT}/lib/libcudart.so"; \
+      break; \
+    done; \
+    ls -la "${CU13_ROOT}/lib/libcudart.so" "${CU13_ROOT}/lib/libcudart.so.13" || true; \
+    # The `-lcuda` (libcuda.so driver API stub) also doesn't ship in
+    # this wheel - DeepEP passes -lcuda for CUDA Driver API calls in
+    # cuda_driver.cu. Use the base image's stub at /usr/local/cuda/
+    # lib64/stubs/libcuda.so (shipped by nvidia/cuda:12.9.0-devel-
+    # ubuntu24.04). Keep that stub dir on LIBRARY_PATH for DeepEP build.
+    test -f /usr/local/cuda/lib64/stubs/libcuda.so || \
+      (echo "[wave12] FATAL: no libcuda.so stub in base image" && exit 1); \
     echo "CU13_ROOT=${CU13_ROOT}"                 >  /etc/wave12-cuda13.env; \
     echo "PYTORCH_CUDA_NVCC_DIR=${CU13_ROOT}/bin" >> /etc/wave12-cuda13.env; \
     echo "PYTORCH_CUDA_RUNTIME_DIR=${CU13_ROOT}/lib" >> /etc/wave12-cuda13.env; \
@@ -573,9 +591,11 @@ RUN set -eux; \
     # NVCC_PREPEND_FLAGS override needed.
     # DeepEP V2 setup.py adds -Wl,-rpath for nccl but not a matching -L, so the
     # linker cannot resolve `-l:libnccl.so`. Inject the path via LIBRARY_PATH.
+    # Also include the cu12.9 base image stubs dir to resolve `-lcuda`
+    # (libcuda.so stub) which the cu13 wheel does not bundle.
     NCCL_LIB_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     test -n "${NCCL_LIB_DIR}"; \
-    export LIBRARY_PATH="${NCCL_LIB_DIR}:${CU13_ROOT}/lib:${LIBRARY_PATH:-}"; \
+    export LIBRARY_PATH="${NCCL_LIB_DIR}:${CU13_ROOT}/lib:/usr/local/cuda/lib64/stubs:${LIBRARY_PATH:-}"; \
     which nvcc && nvcc --version | tail -1; \
     python3 -c "import torch; print('[wave12] torch.version.cuda=', torch.version.cuda, 'torch.__version__=', torch.__version__)"; \
     pip3 install --no-build-isolation --break-system-packages -e .; \
