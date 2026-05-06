@@ -261,26 +261,34 @@ RUN pip install --no-cache-dir --break-system-packages \
 # which gives us libcudart.so.13 via `cudart` and libnvrtc via `nvrtc` but
 # does NOT include the `nvcc` extra.
 #
-# Wave 12 empirical gotcha: `cuda-toolkit==13.0.2` -> nvcc 13.0.88 has a
-# bug where its own ptxas cannot consume the PTX 9.2 that its own nvcc
-# emits when compiling for sm_90a (verified 2026-05-06 via CodeBuild
-# attempt 1: "ptxas fatal : Unsupported .version 9.2; current version is
-# '9.0'"). cu13.2.x ships nvcc+ptxas that correctly handle PTX 9.2
-# targeting sm_90a.
+# Wave 12 empirical gotchas found during CodeBuild iterations:
 #
-# Rather than upgrade the whole cuda-toolkit metapackage (which would
-# force nvidia-cuda-runtime to 13.2.75 and conflict with torch's pin on
-# 13.0.96.*), we install only the compiler components at 13.2.78
-# directly: nvcc (the driver), nvvm (cicc + libdevice), cuda-crt (device
-# crt objects for -rdc=true), and cccl (thrust/cub headers). These all
-# land inside the shared nvidia/cu13/ prefix alongside torch's cu13.0.96
-# cudart. cudart ABI is stable across cu13.0<->cu13.2 so this mix is
-# safe for the runtime.
+# (1) cuda-toolkit==13.0.2 -> nvcc 13.0.88 has a bug where its ptxas
+#     cannot consume the PTX 9.2 that its nvcc emits when compiling for
+#     sm_90a (verified 2026-05-06 attempt 1: "ptxas fatal : Unsupported
+#     .version 9.2; current version is '9.0'"). cu13.2.x ships nvcc
+#     +ptxas that correctly handle PTX 9.2 for sm_90a.
+# (2) cccl's cuda_toolkit.h runs a strict nvcc.minor == cudart.minor
+#     check and errors out "CUDA compiler and CUDA toolkit headers are
+#     incompatible" when the minors differ (attempt 2: nvcc 13.2,
+#     cudart 13.0).
+#
+# Resolution: install the full cu13.2.x set directly (no cuda-toolkit
+# metapackage, no auto-downgrades), using --no-deps so torch's own
+# Requires-Dist pin on cudart 13.0.96.* doesn't conflict. cudart ABI is
+# stable across 13.0<->13.2 minor versions so the 13.2.75 runtime is a
+# drop-in replacement for torch's bundled 13.0.96. The set includes:
+#   nvcc           (compiler driver, invokes cicc+ptxas+fatbinary)
+#   nvvm           (cicc + libdevice, for CUDA-C -> PTX)
+#   cuda-crt       (device crt for -rdc=true device link step)
+#   cuda-cccl      (thrust/cub headers, DeepEP uses cub::WarpReduce)
+#   cuda-runtime   (libcudart.so.13 at 13.2.75, upgrades torch's 13.0.96)
 RUN pip install --no-cache-dir --break-system-packages --no-deps \
       "nvidia-cuda-nvcc>=13.2.78,<13.3" \
       "nvidia-nvvm>=13.2.78,<13.3" \
       "nvidia-cuda-crt>=13.2.78,<13.3" \
-      "nvidia-cuda-cccl>=13.2.75,<13.3"
+      "nvidia-cuda-cccl>=13.2.75,<13.3" \
+      "nvidia-cuda-runtime>=13.2.75,<13.3"
 
 # Expose the cu13 runtime + nvcc that torch and cuda-toolkit just pulled in.
 # site-packages is where pip writes the nvidia-cuda-runtime wheel's
@@ -544,10 +552,12 @@ RUN set -eux; \
     export MAX_JOBS="$(nproc)"; \
     # Wave 12: route DeepEP's build through the pip-installed cu13 nvcc so
     # torch.cpp_extension's cuda-major check passes. torch.version.cuda ==
-    # '13.0' for torch==2.11.0+cu130; the wheel-provided nvcc is cu13.0.88
-    # which matches. CUDA_HOME is re-pointed to nvidia/cu13/ (the wheel's
-    # unified `bin`/`lib`/`include` root) so the torch.cpp_extension probe
-    # finds a cu13 nvcc instead of /usr/local/cuda/bin/nvcc (cu12.9).
+    # '13.0' for torch==2.11.0+cu130; the wheel-provided nvcc is cu13.2.78
+    # (13.0.88 has a ptxas bug that breaks sm_90a compilation). The major
+    # still matches so torch.cpp_extension's check passes.
+    # CUDA_HOME is re-pointed to nvidia/cu13/ (the wheel's unified
+    # `bin`/`lib`/`include` root) so the torch.cpp_extension probe finds a
+    # cu13 nvcc instead of /usr/local/cuda/bin/nvcc (cu12.9).
     source /etc/wave12-cuda13.env; \
     test -n "${CU13_ROOT}"; \
     echo "[wave12] deepep build using CU13_ROOT=${CU13_ROOT}"; \
@@ -555,6 +565,12 @@ RUN set -eux; \
     export PATH="${CU13_ROOT}/bin:${PATH}"; \
     export LD_LIBRARY_PATH="${CU13_ROOT}/lib:${LD_LIBRARY_PATH:-}"; \
     export CPATH="${CU13_ROOT}/include:${CPATH:-}"; \
+    # Wave 12: nvcc (13.2.78) and cudart (13.2.75) both at 13.2, matching
+    # cccl (13.2.75). cccl's cuda_toolkit.h compatibility check passes
+    # because nvcc.minor == cudart.minor == 2. torch 2.11.0+cu130 was
+    # compiled against cudart 13.0.96 but cudart ABI is stable across
+    # 13.0<->13.2 so the 13.2 runtime is a drop-in replacement. No
+    # NVCC_PREPEND_FLAGS override needed.
     # DeepEP V2 setup.py adds -Wl,-rpath for nccl but not a matching -L, so the
     # linker cannot resolve `-l:libnccl.so`. Inject the path via LIBRARY_PATH.
     NCCL_LIB_DIR="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
