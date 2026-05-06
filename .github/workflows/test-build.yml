@@ -59,9 +59,10 @@ jobs:
           test -f pins.env || (echo "pins.env missing at repo root" && exit 1)
           # shellcheck disable=SC1091
           . ./pins.env
-          echo "DEEPEP_FORK=${DEEPEP_FORK}"     >> "$GITHUB_OUTPUT"
-          echo "DEEPEP_BRANCH=${DEEPEP_BRANCH}" >> "$GITHUB_OUTPUT"
-          echo "DEEPEP_SHA=${DEEPEP_SHA}"       >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_FORK=${DEEPEP_FORK}"         >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_BRANCH=${DEEPEP_BRANCH}"     >> "$GITHUB_OUTPUT"
+          echo "DEEPEP_SHA=${DEEPEP_SHA}"           >> "$GITHUB_OUTPUT"
+          echo "NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}" >> "$GITHUB_OUTPUT"
 
       - name: Build image (no push)
         uses: docker/build-push-action@v5
@@ -75,6 +76,7 @@ jobs:
             DEEPEP_FORK=${{ steps.pins.outputs.DEEPEP_FORK }}
             DEEPEP_BRANCH=${{ steps.pins.outputs.DEEPEP_BRANCH }}
             DEEPEP_SHA=${{ steps.pins.outputs.DEEPEP_SHA }}
+            NVIDIA_NCCL_PIN=${{ steps.pins.outputs.NVIDIA_NCCL_PIN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

@@ -18,7 +18,13 @@
 #   EFA user     1.48.0                      efa-installer.amazonaws.com tarball
 #                                            installed via --build-ngc path
 #                                            (libfabric1-aws + libnccl-ofi-ngc-v3)
-#   NCCL         2.30.4                      pip wheel `nvidia-nccl-cu13>=2.30.4`
+#   NCCL         2.30.4                      pip wheel `nvidia-nccl-cu12>=2.30.4`
+#                                            (Wave 9: unified to cu12 to match
+#                                            torch cu129 ABI. HISTORICAL:
+#                                            cu129 is a CUDA 12.9 build, NOT
+#                                            cu13. Mixing cu12 and cu13 NCCL
+#                                            caused Wave 8's invalid-device-
+#                                            ordinal crash.)
 #                                            apt libnccl2 2.26.x is purged
 #   aws-ofi-nccl 6e504db3403931cde43a2335adcc73fbc69cccac (2026-04-24)
 #                                            github.com/aws/aws-ofi-nccl
@@ -70,6 +76,12 @@ FROM nvidia/cuda:12.9.0-devel-ubuntu24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Wave 9: cu12 unification. NCCL pin sourced from pins.env at repo root; CI
+# passes this via --build-arg. Default fallback so `docker build .` works
+# standalone. HISTORICAL: mixing cu12 (torch cu129) with cu13 NCCL caused
+# invalid-device-ordinal crashes at first MoE dispatch (Wave 8 evidence).
+ARG NVIDIA_NCCL_PIN=nvidia-nccl-cu12>=2.30.4
 
 # -----------------------------------------------------------------------------
 # System deps + EFA userspace + aws-ofi-nccl (NGC-aware install path)
@@ -180,9 +192,11 @@ RUN set -eux; \
     rm -f /lib/x86_64-linux-gnu/libnccl.so* /usr/lib/x86_64-linux-gnu/libnccl.so*; \
     ldconfig
 
+ARG NVIDIA_NCCL_PIN
 RUN set -eux; \
+    echo "[wave9] NVIDIA_NCCL_PIN=${NVIDIA_NCCL_PIN}"; \
     pip install --no-cache-dir --break-system-packages --no-deps \
-      "nvidia-nccl-cu13==2.30.4"; \
+      "${NVIDIA_NCCL_PIN}"; \
     NCCL_LIB="$(find /usr/local/lib /usr/lib -path '*/nvidia/nccl/lib' -type d 2>/dev/null | head -1)"; \
     echo "NCCL_LIB=${NCCL_LIB}"; \
     test -n "${NCCL_LIB}"; \
@@ -219,8 +233,11 @@ RUN pip install --no-cache-dir --break-system-packages \
 # with "received count: 0" on AWS EFA once num_allocated_qps >= 5. Supersedes
 # our earlier out-of-tree ring-size patch.
 #
-# Must be built AFTER nvidia-nccl-cu13 pip install so --with-nccl finds
-# matching 2.30.4 headers. The plugin's ncclGinPlugin_v11/v12 symbols must
+# Must be built AFTER the nvidia-nccl-cu12 pip install (see NVIDIA_NCCL_PIN)
+# so --with-nccl finds matching 2.30.4 headers. The aws-ofi-nccl configure
+# script auto-picks up whichever nvidia-nccl-cu* wheel is installed, so the
+# cu12 switch in Wave 9 needs no separate change here.
+# The plugin's ncclGinPlugin_v11/v12 symbols must
 # match the NCCL it is loaded alongside, or DeepEP's railedGinType check
 # (see csrc/kernels/backend/nccl.cu in DeepEP V2) fails.
 #

@@ -5,7 +5,7 @@ in the image is DeepEP V2 (NCCL Gin backend) built against AWS EFA + the
 aws-ofi-nccl GIN plugin, pinned at commits that produce a working 2-node
 dispatch + combine loop on `p5.48xlarge` (H100) and `p5en.48xlarge` (H200).
 
-**Status:** Release `v0.1.0-sm90a` published to `ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a` (2026-05-05). Vanilla build verified locally; fast-path public pull pending GHCR package visibility flip.
+**Status:** Release `v0.1.2-sm90a` published to `ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a` (2026-05-06, Wave 9 cu12 unification). Supersedes `v0.1.0-sm90a` and `v0.1.1-sm90a` (both had a cu13 NCCL wheel that crashed child images with invalid-device-ordinal at first MoE dispatch).
 
 The image is meant to be consumed by downstream inference and training
 repos via a single `FROM ghcr.io/antonai-work/deepep-v2-efa-base:<tag>`
@@ -17,7 +17,7 @@ NCCL + aws-ofi-nccl + DeepEP build problem.
 
 | Repo | Purpose | Status |
 |---|---|---|
-| [deepep-v2-efa-base](https://github.com/antonai-work/deepep-v2-efa-base) | Base substrate (this repo) | v0.1.0-sm90a released |
+| [deepep-v2-efa-base](https://github.com/antonai-work/deepep-v2-efa-base) | Base substrate (this repo) | v0.1.2-sm90a released (Wave 9 cu12) |
 | [nemo-rl-deepep-v2-efa](https://github.com/antonai-work/nemo-rl-deepep-v2-efa) | Training stack (Megatron-LM + NeMo-RL) | Dual-path build verified 2026-05-05 |
 | [vllm-deepep-v2-efa](https://github.com/antonai-work/vllm-deepep-v2-efa) | Inference stack (vLLM + TRT-LLM) | Dual-path build verified 2026-05-05 |
 
@@ -47,7 +47,7 @@ DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-sp
 | CUDA | `12.9.0` | nvidia/cuda registry |
 | EFA userspace | `1.48.0` | `efa-installer.amazonaws.com/aws-efa-installer-1.48.0.tar.gz`, `--build-ngc` path |
 | libfabric | `libfabric1-aws` (bundled with EFA 1.48.0) | EFA tarball |
-| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu13>=2.30.4` |
+| NCCL | `>= 2.30.4` | pip `nvidia-nccl-cu12>=2.30.4` (Wave 9: cu12, not cu13) |
 | aws-ofi-nccl | `6e504db3403931cde43a2335adcc73fbc69cccac` (2026-04-24) | `aws/aws-ofi-nccl@6e504db` |
 | GDRCopy | `v2.5.1` | `NVIDIA/gdrcopy@v2.5.1` |
 | NVSHMEM | `>= 3.3.9` | pip `nvidia-nvshmem-cu12>=3.3.9` |
@@ -58,7 +58,7 @@ DeepEP PR #612 is consumed by this repo as `patches/0001-0003`. The framework-sp
 ## Consuming the image
 
 ```dockerfile
-FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a
+FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a
 
 # Your engine install goes here.
 RUN pip install --no-cache-dir --break-system-packages vllm==<pin>
@@ -93,12 +93,14 @@ examples.
 
 | Tag | Meaning |
 |---|---|
-| `v0.1.0-sm90a` | First stable release. Targeted SM arch: `9.0a` (H100 + H200). |
+| `v0.1.0-sm90a` | First stable release (SUPERSEDED by v0.1.2; cu13 NCCL poison). |
+| `v0.1.1-sm90a` | Pins.env bump (SUPERSEDED by v0.1.2; same cu13 NCCL poison). |
+| `v0.1.2-sm90a` | Wave 9 cu12 unification. NCCL wheel is `nvidia-nccl-cu12>=2.30.4`. Targeted SM arch: `9.0a` (H100 + H200). |
 | `v<X.Y.Z>-sm90a` | Every subsequent release bumps SemVer; `sm90a` is kept as the primary arch suffix. |
 | `sha-<short>` | Exact git SHA of the `Dockerfile` + patches that produced the image, for audit / bisect. |
 
 All tags under `ghcr.io/antonai-work/deepep-v2-efa-base`. There is
-intentionally **no `latest` tag** - pin to `v0.1.0-sm90a` (or newer) so
+intentionally **no `latest` tag** - pin to `v0.1.2-sm90a` (or newer) so
 downstream images rebuild deterministically.
 
 ## Why this repo exists
@@ -160,7 +162,7 @@ Use GitHub Actions unless you need private ECR hosting.
 Actions `test-build.yml` workflow runs it on every PR. Run it locally:
 
 ```
-docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.0-sm90a \
+docker run --rm ghcr.io/antonai-work/deepep-v2-efa-base:v0.1.2-sm90a \
     bash /preflight.sh
 # expected final line: "5/5 checks PASS"
 ```
