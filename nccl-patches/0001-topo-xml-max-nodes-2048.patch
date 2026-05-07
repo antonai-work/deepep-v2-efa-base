@@ -1,0 +1,33 @@
+From: Anton Alexander <anton@antonai-work>
+Date: 2026-05-06
+Subject: [PATCH] topo: raise NCCL_TOPO_XML_MAX_NODES from 256 to 2048
+
+The DeepEP V2 cross-node dispatch on p5.48xlarge (H100 x 8, EFA x 32)
+hits the 256-node fuse ceiling in ncclTopoFuseXml during intra-node
+graph construction. Per-rank autogen XML contains rank-specific attrs
+(rank, pci_busid) that defeat the attribute-equality check in
+ncclTopoFuseXmlRecursive, so 8 ranks x ~125 nodes > 256.
+
+Neither NCCL_TOPO_FILE override nor FI_EFA_DEVICE_LIST mitigate the
+overflow. The only fix is to raise the cap. 2048 covers 8 ranks at
+~250 nodes each with headroom.
+
+---
+ src/graph/topo.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/graph/topo.h b/src/graph/topo.h
+index abcdef0..1234567 100644
+--- a/src/graph/topo.h
++++ b/src/graph/topo.h
+@@ -189,7 +189,7 @@
+ #define NCCL_TOPO_ID_SYSTEM_ID(id) (id >> 56)
+ #define NCCL_TOPO_ID_LOCAL_ID(id) (id & 0x00ffffffffffffff)
+ #define NCCL_TOPO_ID(systemId, localId) (((int64_t)systemId << 56) + (localId & 0x00ffffffffffffff))
+-#define NCCL_TOPO_XML_MAX_NODES 256
++#define NCCL_TOPO_XML_MAX_NODES 2048
+
+ // Map between CPU affinity domain and PCI bus ID (IOMMU or ACPI namespace)
+
+--
+2.43.0
