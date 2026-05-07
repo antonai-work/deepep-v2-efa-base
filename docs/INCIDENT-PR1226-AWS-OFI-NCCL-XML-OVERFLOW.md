@@ -17,10 +17,10 @@ We filed PR #1226 against aws-ofi-nccl to ship a static `p5.48xl-topo.xml` (122 
 - **CUDA driver**: 580.126.09
 - **EFA kernel modules**: efa, efa_nv_peermem, gdrdrv (all loaded)
 - **Base images under test**:
-  - v0.2.1-sm90a (old plugin, no patch, PASSES): `058264135704.dkr.ecr.us-east-2.amazonaws.com/deepep-v2-efa-base:v0.2.1-sm90a-amd64@sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974`
-  - v0.2.2-sm90a (new plugin + our patch, FAILS): `058264135704.dkr.ecr.us-east-2.amazonaws.com/deepep-v2-efa-base:v0.2.2-sm90a-amd64@sha256:9b920b504116edfd96d04c85668a562aeb461e5a09441bf03fdbf9d04572dfbf`
+  - v0.2.1-sm90a (old plugin, no patch, PASSES): `<redacted-ecr>/deepep-v2-efa-base:v0.2.1-sm90a-amd64@sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974`
+  - v0.2.2-sm90a (new plugin + our patch, FAILS): `<redacted-ecr>/deepep-v2-efa-base:v0.2.2-sm90a-amd64@sha256:9b920b504116edfd96d04c85668a562aeb461e5a09441bf03fdbf9d04572dfbf`
   - v0.2.3-sm90a (revert of v0.2.2, build 2026-05-06T20:23Z): `ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.3-sm90a`
-  - v0.2.4-sm90a (new plugin, NO patch, PASSES — confound-isolation image): `058264135704.dkr.ecr.us-east-2.amazonaws.com/deepep-v2-efa-base:v0.2.4-sm90a-amd64@sha256:615c52eac8f054fcdcd526f502cbadcf8066a7b29982f09c7de7df4ca7953e5a`
+  - v0.2.4-sm90a (new plugin, NO patch, PASSES — confound-isolation image): `<redacted-ecr>/deepep-v2-efa-base:v0.2.4-sm90a-amd64@sha256:615c52eac8f054fcdcd526f502cbadcf8066a7b29982f09c7de7df4ca7953e5a`
 
 ## Empirical three-way controlled experiment
 
@@ -306,7 +306,7 @@ spec:
         # Swap digest between v0.2.1 (PASS) and v0.2.2 (FAIL):
         #   v0.2.1 PASS: sha256:5f6d45e42657c3ee3f20db9ca0f01f21c14c96c7538b598787c4b5bb9be5e974
         #   v0.2.2 FAIL: sha256:9b920b504116edfd96d04c85668a562aeb461e5a09441bf03fdbf9d04572dfbf
-        image: 058264135704.dkr.ecr.us-east-2.amazonaws.com/deepep-v2-efa-base:v0.2.2-sm90a-amd64@sha256:9b920b504116edfd96d04c85668a562aeb461e5a09441bf03fdbf9d04572dfbf
+        image: <redacted-ecr>/deepep-v2-efa-base:v0.2.2-sm90a-amd64@sha256:9b920b504116edfd96d04c85668a562aeb461e5a09441bf03fdbf9d04572dfbf
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -551,7 +551,7 @@ We closed PR #1226 after the three-way controlled experiment isolated our patch 
 ## Contact
 
 - **Reporter**: Anton Alexander (external customer)
-- **Email**: dmvevents@gmail.com
+- **Email**: <redacted-email>
 - **Referrer**: Brian Barrett (AWS, aws-ofi-nccl contributor)
 
 We are available for follow-up testing or to provide additional logs/snapshots from the HyperPod cluster on short notice.
@@ -565,7 +565,7 @@ The following identifiers were present in our internal notes but are redacted in
 
 The following identifiers are intentionally NOT redacted because they are already public or are load-bearing for reproducibility:
 
-- AWS account ID `058264135704` in ECR paths — this ECR repository is public.
+- AWS account ID redacted in ECR paths; image digests are stable and verifiable against the public GHCR mirror at `ghcr.io/antonai-work/deepep-v2-efa-base`.
 - ECR image digests (`sha256:...`) — public, pinned for exact reproduction.
 - GitHub Actions build run URLs under `antonai-work/deepep-v2-efa-base` — public.
 - Upstream commit SHAs (`6e504db...`, `206c02c...`, `1933fdd...`) — public.
@@ -895,7 +895,7 @@ The patch applied to aws-ofi-nccl v1.19.1 in v0.2.2. This is the full git-format
 
 ```
 From 79565c0e5a384bc35bf8a0e6378e60f88c2b2565 Mon Sep 17 00:00:00 2001
-From: Anton Alexander <dmvevents@gmail.com>
+From: Anton Alexander <<redacted-email>>
 Date: Wed, 6 May 2026 19:16:33 +0000
 Subject: [PATCH] topology: add p5.48xlarge topology XML
 
@@ -942,7 +942,7 @@ without the 256-node overflow.
  development. The cross-node failure was not discovered until the
  patch shipped in v0.2.2-sm90a.]
 
-Signed-off-by: Anton Alexander <dmvevents@gmail.com>
+Signed-off-by: Anton Alexander <<redacted-email>>
 ---
  topology/p5.48xl-topo.xml | 204 ++++++++++++++++++++++++++++++++++++++
  topology/Makefile.am      |   1 +
