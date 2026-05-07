@@ -1208,3 +1208,41 @@ Note: the earlier question "does stock autogen produce ~126 nodes on p5.48xlarge
 
 Answering the three above would let us close out the investigation and post clean documentation for other aws-ofi-nccl contributors who might be tempted to ship a p5.48xlarge static XML via a patch like ours.
 
+
+## Appendix H: Post-hoc finding — the cap matters even without the patch (2026-05-07)
+
+After closing this PR we ran DeepEP V2's own `tests/elastic/test_ep.py` (16 ranks / 2 pods) on the v0.2.4 image (v1.19.1 plugin, **no** topology patch). That workload also triggers `graph/xml.h:381 NCCL WARN Error : too many XML nodes (max 256)` on all 16 ranks and the run aborts before the first dispatch. Verbatim pod tails are archived at `docs/wave19-evidence/`.
+
+Two single-variable follow-ups were run to localize the factor:
+
+- **Wave 21** — set `NCCL_TOPO_FILE=/opt/topo/p5.48xl-topo.xml` (122 nodes, identical file on all 16 ranks) on v0.2.4 with no patch. Result: same overflow, 72+ warnings. Source inspection of `xmlFindNode` (`xml.h:197`) shows its dedup predicate requires *every* attribute to match, which is consistent with rank-specific generated attrs preventing full collapse during intra-node fuse. Evidence at `docs/wave21-evidence/`.
+- **Wave 22** — set `FI_EFA_DEVICE_LIST=<4 rail-distributed EFA devices>` on v0.2.4 with no patch. Result: same overflow. Source inspection shows `NCCL_TOPO_XML_MAX_NODES` is exceeded during NCCL's own `/sys/class/pci_bus/*` walk, not during libfabric enumeration; filtering at the libfabric layer does not shrink the XML that NCCL will fuse. Evidence at `docs/wave22-evidence/`.
+
+Combining Wave 18f (init-only PASS on v0.2.4) with Waves 19/21/22 (DeepEP FAIL on v0.2.4) gives a sharper statement split by scenario:
+
+- In the original init-only experiment scenario documented earlier in this report, the topology patch in this PR was the immediate trigger of the overflow.
+- In the later DeepEP test scenario, stock v0.2.4 hit the same underlying 256-node limit without the patch.
+
+The underlying limitation is the `NCCL_TOPO_XML_MAX_NODES = 256` cap in `src/graph/topo.h:192` combined with the non-MNNVL branch of `ncclTopoGetSystem` (`topo.cc:1649-1652`) that reuses that 256-cap buffer for the intra-node fused output.
+
+## Fix that we validated
+
+We built base image `v0.2.5-sm90a` with a single-line change to NCCL 2.30.4:
+
+```
+--- src/graph/topo.h:192
+-#define NCCL_TOPO_XML_MAX_NODES 256
++#define NCCL_TOPO_XML_MAX_NODES 2048
+```
+
+Prior art: ROCm/rccl (AMD production) ships `NCCL_TOPO_XML_MAX_NODES 8192`. Meta's torchcomms ncclx v2.27 used `1024` with comment "NCCLX - Need to run emulation at scale" (reverted to 256 during v2.28 upstream resync). 2048 is a middle value chosen for our tested scenarios.
+
+Cross-node validation on HyperPod p5.48xlarge with this bump:
+
+- **Wave 23** (base image `v0.2.5-sm90a-amd64@sha256:9694e21f...`): DeepEP V2 `test_ep.py` 16 ranks, 2 pods — 144 test-case configs completed cleanly, zero `too many XML nodes` warnings, dispatch/combine throughput in the 2-4 / 17-18 GB/s range. Evidence at `docs/wave23-evidence/`.
+- **Wave 24** (child image `vllm-deepep-v2-efa:fast-4eff12845f68`): same test, 101 cases, zero overflow. Evidence at `docs/wave24-evidence/`.
+- **Wave 25** (child image `nemo-rl-deepep-v2-efa:allprs-c337956`): same test, 106 cases, zero overflow. Evidence at `docs/wave25-evidence/`.
+
+We make no broader claim that 2048 is safe in every NCCL deployment; we report that it eliminates the overflow across these three images and 351 combined test-case configs on our tested HyperPod p5.48xlarge hardware, with no new failures observed in the validation window.
+
+This does not change the conclusion of the main report: the patch in this PR was still the wrong change to land in the init-only scenario we tested, and this PR should stay closed. It does change the scope of the upstream question: the `NCCL_TOPO_XML_MAX_NODES = 256` cap is reached on 32-NIC p5.48xlarge regardless of whether a static-XML patch is present, and a bump in upstream NCCL would benefit any DeepEP-class workload that reaches the 8-local-rank intra-node fuse path on that host shape.
