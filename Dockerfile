@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # This Dockerfile is a thin patch layer on top of ghcr.io/antonai-work/
-# deepep-v2-efa-base:v0.2.4-sm90a. It overwrites libnccl.so.2 with a
+# deepep-v2-efa-base:v0.2.5-sm90a. It overwrites libnccl.so.2 with a
 # rebuild of NVIDIA/nccl tag v2.30.4-1 that contains a single-line change:
 #
 #   src/graph/topo.h:
@@ -23,15 +23,15 @@
 #   remaining fix is to raise the cap.
 #
 # Prior releases:
-#   v0.2.0 ... v0.2.4-sm90a: the full 676-line base rebuild is preserved
+#   v0.2.0 ... v0.2.5-sm90a: the full 676-line base rebuild is preserved
 #   at those git tags (the `Dockerfile` on main at each tag). Reproduce
-#   v0.2.4 via `git checkout v0.2.4-sm90a && docker build .`
+#   v0.2.4 via `git checkout v0.2.5-sm90a && docker build .`
 #
 # Patch artifacts live under nccl-patches/. Rebuild the .so via
 # `./nccl-patches/build.sh` (host CUDA toolkit required).
 # =============================================================================
 
-FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.4-sm90a
+FROM ghcr.io/antonai-work/deepep-v2-efa-base:v0.2.5-sm90a
 
 ENV DEEPEP_BASE_VERSION=v0.2.5-sm90a
 
